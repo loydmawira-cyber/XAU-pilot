@@ -107,8 +107,8 @@ fun MainAppContent(viewModel: XauPilotViewModel) {
     // Profile is intentionally the final tab for every signed-in role.
     val roleTabs = if (authSession != null && (signedInRole == "SUPER_ADMINISTRATOR" || signedInRole == "ADMINISTRATOR")) {
         primaryNavTabs + listOf(
-            NavTabItem("Support", Icons.Default.SupportAgent, ScreenDestination.Support, "nav_support_tab"),
             NavTabItem("Admin", Icons.Default.AdminPanelSettings, ScreenDestination.AdminConsole, "nav_admin_tab"),
+            NavTabItem("Support", Icons.Default.SupportAgent, ScreenDestination.Support, "nav_support_tab"),
             NavTabItem("Profile", Icons.Default.Person, ScreenDestination.Profile, "nav_profile_tab")
         )
     } else if (authSession != null) {
