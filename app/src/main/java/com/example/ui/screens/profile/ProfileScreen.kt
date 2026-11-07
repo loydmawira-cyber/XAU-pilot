@@ -30,11 +30,10 @@ fun ProfileScreen(
     modifier: Modifier = Modifier
 ) {
     val authSession by viewModel.authSession.collectAsState()
-    val apiSettings by viewModel.apiSettings.collectAsState()
     val licenses by viewModel.licenses.collectAsState()
 
     val user = authSession?.user
-    var customUrl by remember { mutableStateOf(apiSettings.customApiBaseUrl) }
+    var showSignOutDialog by remember { mutableStateOf(false) }
 
     LazyColumn(
         modifier = modifier
@@ -51,7 +50,7 @@ fun ProfileScreen(
                 color = GoldLight
             )
             Text(
-                text = "Account Security, Backend Architecture & Legal Compliance",
+                text = "Your account, licenses and personal settings",
                 style = MaterialTheme.typography.bodySmall,
                 color = TextSecondaryDark
             )
@@ -106,10 +105,6 @@ fun ProfileScreen(
                             .padding(12.dp)
                     ) {
                         Column {
-                            Text("Tenant ID", fontSize = 10.sp, color = TextSecondaryDark)
-                            Text(user?.tenantId ?: "ten_gold_alpha_99", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TextPrimaryDark)
-                        }
-                        Column {
                             Text("MFA Security", fontSize = 10.sp, color = TextSecondaryDark)
                             Text("ENABLED (TOTP)", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TradingGreen)
                         }
@@ -117,55 +112,6 @@ fun ProfileScreen(
                             Text("Active Licenses", fontSize = 10.sp, color = TextSecondaryDark)
                             Text("${licenses.size} Active", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = GoldLight)
                         }
-                    }
-                }
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-        }
-
-        // Backend Connection & Sandbox Settings
-        item {
-            SectionHeader(
-                title = "BACKEND & API CONFIGURATION",
-                subtitle = "Connect to your deployed XAU Pilot backend"
-            )
-
-            Card(
-                shape = RoundedCornerShape(14.dp),
-                colors = CardDefaults.cardColors(containerColor = CharcoalSurface),
-                border = BorderStroke(1.dp, CharcoalCardBorder),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(14.dp)) {
-                    Text("No simulated market feed or demo trading data is enabled in this release. Trading information will appear only when supplied by a connected backend and MT5 integration.", fontSize = 11.sp, color = TextSecondaryDark)
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    Text("Backend REST API Base URL", fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = TextPrimaryDark)
-                    Spacer(modifier = Modifier.height(4.dp))
-                    OutlinedTextField(
-                        value = customUrl,
-                        onValueChange = { customUrl = it },
-                        singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = GoldPrimary,
-                            unfocusedBorderColor = CharcoalCardBorder,
-                            focusedContainerColor = CharcoalBackground,
-                            unfocusedContainerColor = CharcoalBackground,
-                            focusedTextColor = TextPrimaryDark,
-                            unfocusedTextColor = TextPrimaryDark
-                        ),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedButton(
-                        onClick = { viewModel.updateApiUrl(customUrl) },
-                        shape = RoundedCornerShape(8.dp),
-                        border = BorderStroke(1.dp, GoldPrimary.copy(alpha = 0.5f)),
-                        modifier = Modifier.align(Alignment.End)
-                    ) {
-                        Text("Update Endpoint", color = GoldLight, fontSize = 11.sp)
                     }
                 }
             }
@@ -293,5 +239,42 @@ fun ProfileScreen(
                 }
             }
         }
+
+        if (authSession != null) {
+            item {
+                OutlinedButton(
+                    onClick = { showSignOutDialog = true },
+                    modifier = Modifier.fillMaxWidth().testTag("profile_sign_out_button"),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, TradingRed.copy(alpha = 0.7f)),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = TradingRed)
+                ) {
+                    Icon(Icons.Default.Logout, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Sign out", fontWeight = FontWeight.Bold)
+                }
+                Spacer(modifier = Modifier.height(18.dp))
+            }
+        }
+    }
+
+    if (showSignOutDialog) {
+        AlertDialog(
+            onDismissRequest = { showSignOutDialog = false },
+            title = { Text("Sign out?") },
+            text = { Text("You will need to sign in again to access your account.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showSignOutDialog = false
+                    viewModel.signOut()
+                }) { Text("Sign out", color = TradingRed) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSignOutDialog = false }) { Text("Cancel", color = GoldLight) }
+            },
+            containerColor = CharcoalSurface,
+            titleContentColor = TextPrimaryDark,
+            textContentColor = TextSecondaryDark
+        )
     }
 }
