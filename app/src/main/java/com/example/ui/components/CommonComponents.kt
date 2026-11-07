@@ -277,7 +277,7 @@ fun EmergencyStopDialog(
         },
         title = {
             Text(
-                text = "CONFIRM EMERGENCY ACTION",
+                text = "STOP & CLOSE ALL EAs?",
                 fontWeight = FontWeight.Bold,
                 fontSize = 18.sp,
                 textAlign = TextAlign.Center
@@ -286,61 +286,17 @@ fun EmergencyStopDialog(
         text = {
             Column(modifier = Modifier.fillMaxWidth()) {
                 Text(
-                    text = "Select an explicit emergency policy. The platform will never close open positions unless explicitly commanded below.",
+                    text = "This emergency command will close all open positions managed by the connected XAU Pilot EAs, delete their pending Buy/Sell Stop and Buy/Sell Limit entry orders, and stop those EAs from opening new trades.",
                     fontSize = 13.sp,
                     color = TextSecondaryDark
                 )
-                Spacer(modifier = Modifier.height(16.dp))
-
-                EmergencyStopPolicy.values().forEach { policy ->
-                    val isSelected = (policy == selectedPolicy)
-                    Surface(
-                        color = if (isSelected) TradingRedBg else CharcoalSurfaceVariant,
-                        shape = RoundedCornerShape(10.dp),
-                        border = BorderStroke(
-                            1.dp,
-                            if (isSelected) TradingRed else CharcoalCardBorder
-                        ),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp)
-                            .clickable { onSelectPolicy(policy) }
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(10.dp)
-                        ) {
-                            RadioButton(
-                                selected = isSelected,
-                                onClick = { onSelectPolicy(policy) },
-                                colors = RadioButtonDefaults.colors(selectedColor = TradingRed)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Column {
-                                Text(
-                                    text = policy.name.replace("_", " "),
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 12.sp,
-                                    color = if (isSelected) TradingRed else TextPrimaryDark
-                                )
-                                Text(
-                                    text = when (policy) {
-                                        EmergencyStopPolicy.CLOSE_NEW_ENTRIES_ONLY ->
-                                            "Default: Halts new signals; EA protects existing trades."
-                                        EmergencyStopPolicy.CLOSE_ALL_MARKET_ORDERS ->
-                                            "Aggressive: Closes all open positions and cancels limits immediately."
-                                        EmergencyStopPolicy.CLOSE_PROFITABLE_ONLY ->
-                                            "Secures positive floating trades, preserves hedge positions."
-                                        EmergencyStopPolicy.FREEZE_ALL_EA_TIMERS ->
-                                            "Stops EA execution timer and background MQL5 loop."
-                                    },
-                                    fontSize = 11.sp,
-                                    color = TextSecondaryDark
-                                )
-                            }
-                        }
-                    }
-                }
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(
+                    text = "This is irreversible market action. Protective Stop Loss and Take Profit levels on positions are not deleted before the positions are closed. Confirm only if you intend to flatten and stop the EAs.",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = TradingRed
+                )
             }
         },
         confirmButton = {
@@ -350,15 +306,12 @@ fun EmergencyStopDialog(
                 shape = RoundedCornerShape(10.dp),
                 modifier = Modifier.testTag("confirm_emergency_stop_button")
             ) {
-                Text("EXECUTE POLICY", fontWeight = FontWeight.Bold, color = Color.White)
+                Text("CLOSE ALL & STOP", fontWeight = FontWeight.Bold, color = Color.White)
             }
         },
         dismissButton = {
-            OutlinedButton(
-                onClick = onDismiss,
-                shape = RoundedCornerShape(10.dp)
-            ) {
-                Text("CANCEL", color = TextSecondaryDark)
+            OutlinedButton(onClick = onDismiss) {
+                Text("Cancel", color = TextSecondaryDark)
             }
         }
     )
