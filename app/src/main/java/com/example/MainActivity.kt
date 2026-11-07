@@ -60,12 +60,26 @@ data class NavTabItem(
 @Composable
 fun MainAppContent(viewModel: XauPilotViewModel) {
     val currentScreen by viewModel.currentScreen.collectAsState()
+    val authSession by viewModel.authSession.collectAsState()
+    val sessionRestoreComplete by viewModel.sessionRestoreComplete.collectAsState()
+    val isGuestMode by viewModel.isGuestMode.collectAsState()
     val userMessage by viewModel.userMessage.collectAsState()
     val emergencyDialogVisible by viewModel.emergencyDialogVisible.collectAsState()
     val selectedEmergencyPolicy by viewModel.selectedEmergencyPolicy.collectAsState()
     val selectedAccountId by viewModel.selectedAccountId.collectAsState()
 
     val snackbarHostState = remember { SnackbarHostState() }
+
+    if (authSession == null && !isGuestMode) {
+        if (!sessionRestoreComplete) {
+            Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = androidx.compose.ui.Alignment.Center) {
+                CircularProgressIndicator(color = GoldPrimary)
+            }
+        } else {
+            WelcomeAuthScreen(viewModel = viewModel)
+        }
+        return
+    }
 
     // Handle user messages in Snackbar
     LaunchedEffect(userMessage) {
@@ -77,21 +91,36 @@ fun MainAppContent(viewModel: XauPilotViewModel) {
 
     // Hardware/System Back button handling
     BackHandler(enabled = currentScreen != ScreenDestination.Home) {
-        viewModel.navigateBack()
+        if (isGuestMode) viewModel.navigateTo(ScreenDestination.Home) else viewModel.navigateBack()
     }
 
-    val navTabs = listOf(
+    val allNavTabs = listOf(
         NavTabItem("Home", Icons.Default.Dashboard, ScreenDestination.Home, "nav_home_tab"),
         NavTabItem("Market", Icons.Default.Storefront, ScreenDestination.Marketplace, "nav_market_tab"),
         NavTabItem("Accounts", Icons.Default.AccountBalance, ScreenDestination.Accounts, "nav_accounts_tab"),
         NavTabItem("Positions", Icons.Default.ShowChart, ScreenDestination.Positions, "nav_positions_tab"),
         NavTabItem("Profile", Icons.Default.Person, ScreenDestination.Profile, "nav_profile_tab")
     )
+    val navTabs = if (isGuestMode) allNavTabs.take(2) else allNavTabs
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         containerColor = CharcoalBackground,
         snackbarHost = { SnackbarHost(snackbarHostState) },
+        topBar = {
+            if (isGuestMode || authSession != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween,
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                ) {
+                    Text(if (isGuestMode) "GUEST MODE · READ ONLY" else "SIGNED IN", color = GoldLight, fontSize = 11.sp)
+                    TextButton(onClick = { if (isGuestMode) viewModel.leaveGuestMode() else viewModel.signOut() }) {
+                        Text(if (isGuestMode) "Sign in" else "Sign out", color = GoldLight)
+                    }
+                }
+            }
+        },
         bottomBar = {
             NavigationBar(
                 containerColor = CharcoalSurface,
@@ -148,7 +177,7 @@ fun MainAppContent(viewModel: XauPilotViewModel) {
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            when (val screen = currentScreen) {
+            when (val screen = if (isGuestMode && currentScreen !is ScreenDestination.Home && currentScreen !is ScreenDestination.Marketplace) ScreenDestination.Home else currentScreen) {
                 is ScreenDestination.Home -> HomeScreen(viewModel = viewModel)
                 is ScreenDestination.Marketplace -> MarketplaceScreen(viewModel = viewModel)
                 is ScreenDestination.Accounts -> AccountsScreen(viewModel = viewModel)
