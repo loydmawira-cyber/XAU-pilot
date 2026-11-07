@@ -12,7 +12,7 @@ import retrofit2.converter.moshi.MoshiConverterFactory
 import java.util.concurrent.TimeUnit
 
 object ApiClient {
-    private var baseUrl = "https://localhost/api/v1/"
+    private var baseUrl = "https://xau-pilot-api.onrender.com/api/v1/"
     private var authToken: String? = null
     private var refreshToken: String? = null
     private var securePrefs: android.content.SharedPreferences? = null
