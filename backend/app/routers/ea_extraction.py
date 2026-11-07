@@ -282,8 +282,39 @@ def save_reviewed_manifest(product_id: str, version_id: str, manifest: Dict[str,
         raise HTTPException(status.HTTP_409_CONFLICT, "Published versions are immutable")
     binary = db.query(EaBinaryPackage).filter(EaBinaryPackage.version_id == version.id).first()
     job = db.query(EaExtractionJob).filter(EaExtractionJob.version_id == version.id).first()
-    if not binary or not job or job.status != "COMPLETE" or binary.sha256 != job.binary_sha256:
-        raise HTTPException(status.HTTP_409_CONFLICT, "Verified extraction for the current EX5 is required")
+    if (not binary or binary.scan_status != "CLEAN" or not job or job.status != "COMPLETE"
+            or binary.sha256 != job.binary_sha256):
+        raise HTTPException(status.HTTP_409_CONFLICT, "A CLEAN scan and verified extraction for the current EX5 are required")
+    if storage.sha256_of(binary.storage_key) != binary.sha256:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Stored EX5 checksum mismatch")
+    extracted = json.loads(job.result_json or "{}")
+    expected = {}
+    for raw in extracted.get("inputs", []):
+        proposed = _extracted_parameter(raw)
+        if proposed is not None:
+            expected[proposed["key"]] = proposed
+    supplied_parameters = manifest.get("parameters") if isinstance(manifest, dict) else None
+    if not isinstance(supplied_parameters, list):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, {"manifest_errors": ["parameters must be a list"]})
+    supplied_by_key = {p.get("key"): p for p in supplied_parameters if isinstance(p, dict)}
+    if len(supplied_by_key) != len(supplied_parameters) or set(supplied_by_key) != set(expected):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            {"manifest_errors": ["Reviewed parameters must match the supported inputs extracted from this exact EX5"]})
+    for key, proposed in expected.items():
+        supplied = supplied_by_key[key]
+        if supplied.get("type") != proposed["type"] or supplied.get("choices") != proposed.get("choices"):
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                {"manifest_errors": [f"{key}: extracted type and enum choices cannot be changed"]})
+        actual_default, extracted_default = supplied.get("default"), proposed.get("default")
+        if isinstance(extracted_default, bool):
+            same_default = isinstance(actual_default, bool) and actual_default == extracted_default
+        elif isinstance(extracted_default, (int, float)) and not isinstance(extracted_default, bool):
+            same_default = isinstance(actual_default, (int, float)) and not isinstance(actual_default, bool) and float(actual_default) == float(extracted_default)
+        else:
+            same_default = type(actual_default) is type(extracted_default) and actual_default == extracted_default
+        if not same_default:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                {"manifest_errors": [f"{key}: default must match the value extracted from the uploaded EX5; recompile the EA to change it"]})
     errors = mf.validate_manifest(
         manifest, expected_product_ref=(product.id, product.product_code),
         expected_version=version.version, expected_developer_id=user.id,
