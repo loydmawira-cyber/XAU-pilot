@@ -116,7 +116,7 @@ class DeveloperApiTests(unittest.TestCase):
         self.assertEqual(ordinary.status_code, 200)
         self.assertEqual(ordinary.json()["user"]["role"], "CUSTOMER")
 
-    def test_01_super_admin_can_create_only_one_restricted_admin(self):
+    def test_01_super_admin_can_create_multiple_restricted_admins(self):
         login = self.c.post(f"{API}/auth/login", json={
             "email": "owner@xaupilot.test", "password": "A-Strong-Admin-Password-2026!"
         })
@@ -126,8 +126,9 @@ class DeveloperApiTests(unittest.TestCase):
         created = self.c.post(f"{API}/auth/admin-users", headers=super_headers, json=payload)
         self.assertEqual(created.status_code, 201, created.text)
         self.assertEqual(created.json()["role"], "ADMINISTRATOR")
-        duplicate = self.c.post(f"{API}/auth/admin-users", headers=super_headers, json={**payload, "email": "second@xaupilot.test"})
-        self.assertEqual(duplicate.status_code, 409, duplicate.text)
+        second = self.c.post(f"{API}/auth/admin-users", headers=super_headers, json={**payload, "email": "second@xaupilot.test"})
+        self.assertEqual(second.status_code, 201, second.text)
+        self.assertEqual(second.json()["role"], "ADMINISTRATOR")
         admin_login = self.c.post(f"{API}/auth/login", json={"email": payload["email"], "password": payload["password"]})
         self.assertEqual(admin_login.status_code, 200, admin_login.text)
         admin_headers = {"Authorization": f"Bearer {admin_login.json()['accessToken']}"}
@@ -237,8 +238,8 @@ class DeveloperApiTests(unittest.TestCase):
             db.query(EaProduct).filter(EaProduct.id == product["id"]).update({"is_published": True, "listing_status": "APPROVED"})
             db.commit()
         connect = self.c.post(f"{API}/developer/ea-products/{product['id']}/performance-account", headers=dev["h"], json={
-            "label": "Owner Demo MT5", "broker_name": "Demo Broker", "server_name": "Demo-Server",
-            "account_number": "12345678", "environment": "DEMO", "magic_number": 880001,
+            "label": "Owner Live MT5", "broker_name": "Live Broker", "server_name": "Live-Server",
+            "account_number": "12345678", "environment": "LIVE", "magic_number": 880001,
             "symbol": "XAUUSD", "timeframe": "M5"})
         self.assertEqual(connect.status_code, 201, connect.text)
         body = connect.json()
