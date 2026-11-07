@@ -39,9 +39,32 @@ class XauPilotViewModel(
         restoreAuthenticatedSession()
     }
 
+    private val _sessionRestoreComplete = MutableStateFlow(false)
+    val sessionRestoreComplete: StateFlow<Boolean> = _sessionRestoreComplete.asStateFlow()
+    private val _isGuestMode = MutableStateFlow(false)
+    val isGuestMode: StateFlow<Boolean> = _isGuestMode.asStateFlow()
+
+    fun enterGuestMode() { _isGuestMode.value = true }
+    fun leaveGuestMode() { _isGuestMode.value = false }
+
+    fun signOut() {
+        viewModelScope.launch {
+            try { ApiClient.apiService.logout() } catch (_: Exception) { }
+            ApiClient.clearSession()
+            repository.clearAuthenticatedSession()
+            _isGuestMode.value = false
+            screenBackStack.clear()
+            _currentScreen.value = ScreenDestination.Home
+        }
+    }
+
     private fun restoreAuthenticatedSession() {
         viewModelScope.launch {
-            val access = ApiClient.getAuthToken() ?: return@launch
+            val access = ApiClient.getAuthToken()
+            if (access.isNullOrBlank()) {
+                _sessionRestoreComplete.value = true
+                return@launch
+            }
             val refresh = ApiClient.getRefreshToken()
             try {
                 var userResponse = ApiClient.apiService.getCurrentUser()
@@ -63,6 +86,8 @@ class XauPilotViewModel(
                 }
             } catch (_: Exception) {
                 // Keep credentials only when the backend is temporarily unreachable; do not fabricate a session.
+            } finally {
+                _sessionRestoreComplete.value = true
             }
         }
     }
