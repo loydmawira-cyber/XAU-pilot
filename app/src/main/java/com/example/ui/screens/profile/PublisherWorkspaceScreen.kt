@@ -28,6 +28,8 @@ fun PublisherWorkspaceScreen(viewModel: XauPilotViewModel, modifier: Modifier = 
     val context = LocalContext.current
     val busy by viewModel.publisherBusy.collectAsState()
     val result by viewModel.publisherResult.collectAsState()
+    val extraction by viewModel.publisherExtraction.collectAsState()
+    val reviewManifest by viewModel.publisherReviewManifest.collectAsState()
     val createdProductId by viewModel.publisherProductId.collectAsState()
     val bridgeToken by viewModel.publisherBridgeToken.collectAsState()
     val session by viewModel.authSession.collectAsState()
@@ -36,14 +38,8 @@ fun PublisherWorkspaceScreen(viewModel: XauPilotViewModel, modifier: Modifier = 
     var password by remember { mutableStateOf("") }
     var fullName by remember { mutableStateOf("") }
     var createAccount by remember { mutableStateOf(true) }
-    var name by remember { mutableStateOf("") }
-    var version by remember { mutableStateOf("1.0.0") }
-    var description by remember { mutableStateOf("") }
-    var monthlyPrice by remember { mutableStateOf("49") }
-    var category by remember { mutableStateOf("GOLD_TREND") }
     var fileUri by remember { mutableStateOf<android.net.Uri?>(null) }
     var fileName by remember { mutableStateOf<String?>(null) }
-    var parametersJson by remember { mutableStateOf("[]") }
     var brokerName by remember { mutableStateOf("") }
     var brokerServer by remember { mutableStateOf("") }
     var mt5AccountNumber by remember { mutableStateOf("") }
@@ -96,42 +92,123 @@ fun PublisherWorkspaceScreen(viewModel: XauPilotViewModel, modifier: Modifier = 
             Card(colors = CardDefaults.cardColors(containerColor = CharcoalSurface), border = BorderStroke(1.dp, GoldPrimary.copy(alpha = .35f))) {
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("New EA release", fontWeight = FontWeight.Bold, color = TextPrimaryDark)
-                    Text("Choose your .ex5 file. The app uploads it to the configured XAU Pilot backend. Uploading does not connect to MT5 or start trading.", fontSize = 12.sp, color = TextSecondaryDark)
+                    Text("Upload one compiled .ex5 file. XAU Pilot creates the draft automatically. Uploading does not connect to a live MT5 account or start trading.", fontSize = 12.sp, color = TextSecondaryDark)
                     OutlinedButton(onClick = { picker.launch(arrayOf("*/*")) }, modifier = Modifier.fillMaxWidth().testTag("publisher_upload_button")) {
                         Icon(Icons.Default.CloudUpload, null); Spacer(Modifier.width(8.dp)); Text(fileName ?: "Choose .ex5 file")
                     }
-                    OutlinedTextField(name, { name = it }, label = { Text("EA name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(version, { version = it }, label = { Text("Version (x.y.z)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(description, { description = it }, label = { Text("Description (at least 10 characters)") }, minLines = 3, modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(monthlyPrice, { monthlyPrice = it }, label = { Text("Monthly price (USD)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    Text("Strategy category", color = TextSecondaryDark, fontSize = 12.sp)
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf("GOLD_TREND", "GOLD_SCALPING", "GOLD_BREAKOUT").forEach { item ->
-                            FilterChip(selected = category == item, onClick = { category = item }, label = { Text(item.substringAfter("GOLD_")) })
-                        }
-                    }
-                    Text("Developer-defined customer inputs (JSON array)", color = TextPrimaryDark, fontWeight = FontWeight.SemiBold)
-                    OutlinedTextField(
-                        value = parametersJson, onValueChange = { parametersJson = it },
-                        modifier = Modifier.fillMaxWidth(), minLines = 5,
-                        label = { Text("Input manifest parameters") },
-                        supportingText = { Text("Use [] if this EA has no customer-adjustable inputs. Definitions must come from the EA developer.") }
+                    Text(
+                        "XAU Pilot will create your EA draft from this file. No manifest or customer-input form is required.",
+                        fontSize = 12.sp, color = TextSecondaryDark
                     )
                     Button(
-                        onClick = {
-                            val price = monthlyPrice.toDoubleOrNull()
-                            if (fileUri != null && name.isNotBlank() && version.matches(Regex("\\d+\\.\\d+\\.\\d+")) && description.length >= 10 && price != null && price >= 0) {
-                                viewModel.uploadAndPublishDraft(context, fileUri!!, name.trim(), version.trim(), description.trim(), category, price, parametersJson)
-                            }
-                        },
-                        enabled = !busy && fileUri != null && name.isNotBlank() && version.matches(Regex("\\d+\\.\\d+\\.\\d+")) && description.length >= 10 && (monthlyPrice.toDoubleOrNull() ?: -1.0) >= 0,
+                        onClick = { fileUri?.let { viewModel.uploadAndPublishDraft(context, it) } },
+                        enabled = !busy && fileUri != null,
                         modifier = Modifier.fillMaxWidth().testTag("submit_ea_review_button"),
                         colors = ButtonDefaults.buttonColors(containerColor = GoldPrimary)
                     ) {
                         if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                        else Text("Upload and validate EA", color = CharcoalBackground, fontWeight = FontWeight.Bold)
+                        else Text("Upload EA", color = CharcoalBackground, fontWeight = FontWeight.Bold)
                     }
-                    result?.let { Text(it, color = if (it.startsWith("EA and manifest uploaded")) TradingGreen else TradingAmber, fontSize = 12.sp) }
+                    result?.let { Text(it, color = if (it.startsWith("EX5 uploaded")) TradingGreen else TradingAmber, fontSize = 12.sp) }
+                    extraction?.let { job ->
+                        Spacer(Modifier.height(4.dp))
+                        Text("AUTOMATIC MT5 INPUT DISCOVERY", color = GoldLight, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text("Status: ${job["status"]?.toString() ?: "Unknown"}", color = if (job["status"] == "COMPLETE") TradingGreen else TradingAmber, fontWeight = FontWeight.SemiBold)
+                        when (job["status"]?.toString()) {
+                            "QUEUED" -> Text("Your EX5 is waiting for the secure scanner and isolated MT5 extraction worker.", color = TextSecondaryDark, fontSize = 12.sp)
+                            "RUNNING" -> Text("The isolated MT5 worker is inspecting the uploaded EA. Refresh to check progress.", color = TextSecondaryDark, fontSize = 12.sp)
+                            "COMPLETE" -> {
+                                val inputs = job["inputs"] as? List<*>
+                                Text("Extracted inputs: ${inputs?.size ?: 0}. These are not customer-visible until you review and approve them.", color = TextSecondaryDark, fontSize = 12.sp)
+                                inputs.orEmpty().forEach { raw ->
+                                    val item = raw as? Map<*, *> ?: return@forEach
+                                    Text("• ${item["display_name"] ?: item["key"]} — ${item["type"] ?: "unknown"} (default: ${item["default"] ?: "not reported"})", color = TextPrimaryDark, fontSize = 11.sp)
+                                }
+                            }
+                            "FAILED" -> Text("Extraction failed (${job["error_code"] ?: "unknown error"}). Upload a corrected build or contact support.", color = TradingAmber, fontSize = 12.sp)
+                            else -> Text("Extraction has not been queued yet.", color = TextSecondaryDark, fontSize = 12.sp)
+                        }
+                        OutlinedButton(onClick = { viewModel.refreshPublisherExtraction() }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+                            Text("Refresh extraction status")
+                        }
+                        if (job["status"] == "COMPLETE" && reviewManifest == null) {
+                            Button(onClick = { viewModel.preparePublisherReviewDraft() }, enabled = !busy,
+                                modifier = Modifier.fillMaxWidth()) {
+                                Text("Prepare developer input review")
+                            }
+                        }
+                        reviewManifest?.let { review ->
+                            Spacer(Modifier.height(6.dp))
+                            Text("DEVELOPER INPUT APPROVAL", color = GoldLight, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text("Every input starts hidden and non-editable. Choose what customers may see and edit. Do not enable a setting unless you understand its effect.", color = TextSecondaryDark, fontSize = 12.sp)
+                            val reviewInputs = review["parameters"] as? List<*>
+                            reviewInputs.orEmpty().forEachIndexed { index, raw ->
+                                val parameter = raw as? Map<*, *> ?: return@forEachIndexed
+                                Card(colors = CardDefaults.cardColors(containerColor = CharcoalBackground),
+                                    border = BorderStroke(1.dp, GoldPrimary.copy(alpha = .25f))) {
+                                    Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        Text(parameter["label"]?.toString() ?: parameter["key"]?.toString().orEmpty(),
+                                            color = TextPrimaryDark, fontWeight = FontWeight.SemiBold)
+                                        Text("Type: ${parameter["type"]} · Extracted default: ${parameter["default"]}",
+                                            color = TextSecondaryDark, fontSize = 11.sp)
+                                        Text("Compiled default (from this EX5): ${parameter["default"]}. Recompile the EA to change its built-in default.",
+                                            color = TextSecondaryDark, fontSize = 11.sp)
+                                        if (parameter["type"] == "integer" || parameter["type"] == "decimal") {
+                                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                listOf("minimum", "maximum", "step").forEach { field ->
+                                                    OutlinedTextField(
+                                                        value = parameter["${field}_draft"]?.toString()
+                                                            ?: parameter[field]?.toString().orEmpty(),
+                                                        onValueChange = { viewModel.updatePublisherReviewParameter(index, "${field}_draft", it) },
+                                                        label = { Text(field.replaceFirstChar { ch -> ch.uppercase() }) },
+                                                        modifier = Modifier.weight(1f),
+                                                        singleLine = true
+                                                    )
+                                                }
+                                            }
+                                            Text("Leave numeric bounds blank if you do not want to enforce them.", color = TextSecondaryDark, fontSize = 10.sp)
+                                        }
+                                        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                                            Checkbox(
+                                                checked = parameter["visible_to_customer"] == true,
+                                                onCheckedChange = { viewModel.updatePublisherReviewParameter(index, "visible_to_customer", it) }
+                                            )
+                                            Text("Visible to customers", color = TextPrimaryDark, fontSize = 12.sp)
+                                        }
+                                        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                                            Checkbox(
+                                                checked = parameter["customer_editable"] == true,
+                                                enabled = parameter["visible_to_customer"] == true,
+                                                onCheckedChange = { viewModel.updatePublisherReviewParameter(index, "customer_editable", it) }
+                                            )
+                                            Text("Customers may edit", color = TextPrimaryDark, fontSize = 12.sp)
+                                        }
+                                        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                                            Checkbox(
+                                                checked = parameter["requires_restart"] == true,
+                                                onCheckedChange = { viewModel.updatePublisherReviewParameter(index, "requires_restart", it) }
+                                            )
+                                            Text("Requires EA restart after change", color = TextPrimaryDark, fontSize = 12.sp)
+                                        }
+                                        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                                            Checkbox(
+                                                checked = parameter["requires_no_open_positions"] == true,
+                                                onCheckedChange = { viewModel.updatePublisherReviewParameter(index, "requires_no_open_positions", it) }
+                                            )
+                                            Text("Change only when no positions are open", color = TextPrimaryDark, fontSize = 12.sp)
+                                        }
+                                    }
+                                }
+                            }
+                            if (reviewInputs.isNullOrEmpty()) {
+                                Text("No supported inputs were extracted. Unresolved inputs must be inspected before this EA can be published.", color = TradingAmber, fontSize = 12.sp)
+                            }
+                            Button(onClick = { viewModel.savePublisherReviewDraft() }, enabled = !busy && !reviewInputs.isNullOrEmpty(),
+                                modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = GoldPrimary)) {
+                                Text("Save developer input choices", color = CharcoalBackground, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
                 }
             }
         }

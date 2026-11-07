@@ -13,14 +13,28 @@ from backend.app.database import engine, Base
 from backend.app.routers import (
     auth, broker_accounts, ea_marketplace,
     ea_installations, ea_bridge, vps_telemetry, hosting,
-    developer, ea_review, ea_packages, ea_performance, admin
+    developer, ea_review, ea_packages, ea_performance, admin, ea_extraction
 )
 
 # Initialize database schema tables if not present
 try:
     Base.metadata.create_all(bind=engine)
+    # Existing deployments may have ea_products from the initial schema but not
+    # the developer-release columns added by migration 002. create_all does not
+    # alter existing tables, so ensure these additive columns exist on PostgreSQL.
+    if settings.DATABASE_URL.startswith(("postgresql://", "postgresql+")):
+        from sqlalchemy import text
+        with engine.begin() as connection:
+            connection.execute(text(
+                "ALTER TABLE ea_products "
+                "ADD COLUMN IF NOT EXISTS developer_id UUID REFERENCES users(id)"
+            ))
+            connection.execute(text(
+                "ALTER TABLE ea_products "
+                "ADD COLUMN IF NOT EXISTS listing_status VARCHAR(30) NOT NULL DEFAULT 'APPROVED'"
+            ))
 except Exception as e:
-    print(f"[XAU-PILOT] Note: DB create_all deferred to migrations: {e}")
+    print(f"[XAU-PILOT] Note: DB schema initialization deferred to migrations: {e}")
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -51,6 +65,7 @@ app.include_router(ea_review.router, prefix=settings.API_V1_STR)
 app.include_router(ea_packages.router, prefix=settings.API_V1_STR)
 app.include_router(ea_performance.router)
 app.include_router(admin.router, prefix=settings.API_V1_STR)
+app.include_router(ea_extraction.router)
 app.include_router(ea_bridge.router, prefix=settings.EA_V1_STR)
 
 @app.get("/health")

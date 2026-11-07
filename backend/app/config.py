@@ -57,6 +57,7 @@ class Settings:
     EA_STORAGE_DIR: str = os.getenv("EA_STORAGE_DIR", "./var/ea_packages")
     EA_MAX_BINARY_BYTES: int = int(os.getenv("EA_MAX_BINARY_BYTES", str(25 * 1024 * 1024)))
     EA_SCAN_COMMAND: str = os.getenv("EA_SCAN_COMMAND", "")
+    EA_EXTRACTION_WORKER_TOKEN: str = os.getenv("EA_EXTRACTION_WORKER_TOKEN", "")
     MANIFEST_SIGNING_KEY: str = os.getenv("MANIFEST_SIGNING_KEY", "")
 
 settings = Settings()

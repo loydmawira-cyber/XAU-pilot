@@ -20,7 +20,7 @@ from backend.app.dependencies import get_current_user
 from backend.app.ea_dev import manifest as mf
 from backend.app.ea_dev import storage
 from backend.app.models import (
-    DeveloperProfile, EaBinaryPackage, EaConfigVersion, EaDeveloperAuditLog,
+    DeveloperProfile, EaBinaryPackage, EaExtractionJob, EaConfigVersion, EaDeveloperAuditLog,
     EaInputManifest, EaInstallation, EaProduct, EaProductVersion, User,
 )
 
@@ -295,8 +295,23 @@ def upload_binary(product_id: str, version_id: str, file: UploadFile = File(...)
         version_id=version.id, storage_key=stored.storage_key,
         original_filename=(file.filename or "")[:200], sha256=stored.sha256,
         size_bytes=stored.size_bytes, scan_status=scan_status, uploaded_by=user.id))
+    # A replacement binary invalidates every previous extraction and input schema.
+    # Never allow settings extracted from an older EX5 to be published with a new binary.
+    old_manifest = db.query(EaInputManifest).filter(EaInputManifest.version_id == version.id).first()
+    if old_manifest:
+        db.delete(old_manifest)
+        db.flush()
+    # Queue MT5 inspection automatically; the separate Windows worker claims this job.
+    # Re-uploading replaces the prior draft binary, extraction result, and reviewed schema.
+    existing_job = db.query(EaExtractionJob).filter(EaExtractionJob.version_id == version.id).first()
+    if existing_job:
+        db.delete(existing_job)
+        db.flush()
+    db.add(EaExtractionJob(
+        product_id=product.id, version_id=version.id, binary_sha256=stored.sha256, status="QUEUED"))
     _audit(db, user, product.id, version.id, "BINARY_UPLOADED",
-           {"sha256": stored.sha256, "size": stored.size_bytes, "scan": scan_status})
+           {"sha256": stored.sha256, "size": stored.size_bytes, "scan": scan_status,
+            "extraction": "QUEUED"})
     db.commit()
     return _version_dict(db, version)
 
@@ -380,8 +395,13 @@ def publish_version(product_id: str, version_id: str, user: User = Depends(get_c
         problems.append("upload the EX5 binary")
     elif binary.scan_status != "CLEAN":
         problems.append(f"binary scan must be CLEAN before publication (current status: {binary.scan_status})")
+    extraction = db.query(EaExtractionJob).filter(EaExtractionJob.version_id == version.id).first()
+    if not extraction or extraction.status != "COMPLETE":
+        problems.append("automatic MT5 input extraction must complete before publication")
+    elif binary and extraction.binary_sha256 != binary.sha256:
+        problems.append("MT5 extraction result does not match the currently uploaded EX5 binary")
     if not row:
-        problems.append("upload the input manifest")
+        problems.append("developer-reviewed input schema is required before publication")
     if problems:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, {"must": problems})
     errors = _revalidate(product, version, user, row.canonical_json)

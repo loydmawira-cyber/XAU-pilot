@@ -19,7 +19,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 from backend.app.database import Base, SessionLocal, engine  # noqa: E402
 from backend.app.main import app  # noqa: E402
-from backend.app.models import EaLicense, EaBinaryPackage, User  # noqa: E402
+from backend.app.models import EaLicense, EaBinaryPackage, EaExtractionJob, User  # noqa: E402
 
 API = "/api/v1"
 EX5 = b"\x7fEX5-binary-bytes" * 8
@@ -98,6 +98,14 @@ class DeveloperApiTests(unittest.TestCase):
         r1, r2 = self.upload(dev, p["id"], vid, manifest(p["id"], dev["id"]))
         self.assertEqual(r1.status_code, 200, r1.text)
         self.assertTrue(r2.json()["manifest"]["is_valid"], r2.text)
+        # Fixture: simulate a completed extraction for tests that need a published EA.
+        with SessionLocal() as db:
+            binary = db.query(EaBinaryPackage).filter(EaBinaryPackage.version_id == vid).one()
+            job = db.query(EaExtractionJob).filter(EaExtractionJob.version_id == vid).one()
+            job.status = "COMPLETE"
+            job.binary_sha256 = binary.sha256
+            job.result_json = json.dumps({"inputs": [], "unresolved": []})
+            db.commit()
         r = self.c.post(f"{API}/developer/ea-products/{p['id']}/versions/{vid}/publish", headers=dev["h"])
         self.assertEqual(r.status_code, 200, r.text)
         return p, vid
@@ -209,6 +217,62 @@ class DeveloperApiTests(unittest.TestCase):
         p, vid = self.published(dev, "PRV07")
         prev = self.c.get(f"{API}/developer/ea-products/{p['id']}/versions/{vid}/preview", headers=dev["h"]).json()
         self.assertNotIn("hidden_edge", json.dumps(prev))
+
+    def test_extraction_prepares_hidden_developer_review_and_binds_schema_to_binary(self):
+        dev = self.developer("extract-review@xaupilot.test")
+        product = self.product(dev, "EXTRVW")
+        version_id = self.version(dev, product["id"])
+        base = f"{API}/developer/ea-products/{product['id']}/versions/{version_id}"
+        upload = self.c.post(f"{base}/upload-binary", headers=dev["h"],
+                             files={"file": ("review.ex5", io.BytesIO(EX5))})
+        self.assertEqual(upload.status_code, 200, upload.text)
+        with SessionLocal() as db:
+            binary = db.query(EaBinaryPackage).filter(EaBinaryPackage.version_id == version_id).one()
+            binary.scan_status = "CLEAN"
+            job = db.query(EaExtractionJob).filter(EaExtractionJob.version_id == version_id).one()
+            job.status = "COMPLETE"
+            job.binary_sha256 = binary.sha256
+            job.result_json = json.dumps({"inputs": [
+                {"key": "lots", "display_name": "Lots", "type": "double", "default": 0.01, "choices": []}
+            ], "unresolved": []})
+            db.commit()
+
+        prepared = self.c.post(f"{base}/extraction/prepare-manifest", headers=dev["h"])
+        self.assertEqual(prepared.status_code, 200, prepared.text)
+        self.assertEqual(prepared.json()["status"], "REVIEW_REQUIRED")
+        param = prepared.json()["parameters"][0]
+        self.assertFalse(param["visible_to_customer"])
+        self.assertFalse(param["customer_editable"])
+        reviewed = {
+            "schema_version": "1.0", "ea_product_id": product["id"], "ea_version": "1.0.0",
+            "developer_id": dev["id"],
+            "parameters": [{**param, "visible_to_customer": True, "customer_editable": True,
+                            "minimum": 0.01, "maximum": 1.0, "step": 0.01, "requires_restart": True}],
+        }
+        saved = self.c.put(f"{base}/review-manifest", headers=dev["h"], json=reviewed)
+        self.assertEqual(saved.status_code, 200, saved.text)
+        self.assertEqual(saved.json()["status"], "REVIEW_SAVED")
+        preview = self.c.get(f"{base}/preview", headers=dev["h"])
+        self.assertEqual(preview.status_code, 200, preview.text)
+        self.assertEqual(preview.json()["parameters"][0]["key"], "lots")
+
+        changed_default = {**reviewed, "parameters": [{**reviewed["parameters"][0], "default": 0.02}]}
+        rejected = self.c.put(f"{base}/review-manifest", headers=dev["h"], json=changed_default)
+        self.assertEqual(rejected.status_code, 422, rejected.text)
+
+    def test_reupload_invalidates_previous_manifest_and_extraction(self):
+        dev = self.developer("reupload-review@xaupilot.test")
+        product = self.product(dev, "REUPRV")
+        version_id = self.version(dev, product["id"])
+        _, manifest_response = self.upload(dev, product["id"], version_id, manifest(product["id"], dev["id"]))
+        self.assertTrue(manifest_response.json()["manifest"]["is_valid"])
+        base = f"{API}/developer/ea-products/{product['id']}/versions/{version_id}"
+        uploaded_again = self.c.post(f"{base}/upload-binary", headers=dev["h"],
+                                     files={"file": ("replacement.ex5", io.BytesIO(EX5 + b"new"))})
+        self.assertEqual(uploaded_again.status_code, 200, uploaded_again.text)
+        versions = self.c.get(f"{API}/developer/ea-products/{product['id']}/versions", headers=dev["h"])
+        version = next(item for item in versions.json() if item["id"] == version_id)
+        self.assertIsNone(version["manifest"])
 
     def test_binary_validation(self):
         dev = self.developer("d8@x.com")

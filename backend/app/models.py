@@ -466,3 +466,22 @@ class SupportMessage(Base):
     sender_user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     body = Column(Text, nullable=False)
     created_at = Column(DateTime, nullable=False, default=utc_now)
+
+
+class EaExtractionJob(Base):
+    """A checksum-bound request for an isolated Windows MT5 inspection worker."""
+    __tablename__ = "ea_extraction_jobs"
+    __table_args__ = (Index("ix_ea_extract_status_created", "status", "created_at"),)
+
+    id = Column(String(36), primary_key=True, default=gen_uuid)
+    product_id = Column(String(36), ForeignKey("ea_products.id", ondelete="CASCADE"), nullable=False, index=True)
+    version_id = Column(String(36), ForeignKey("ea_product_versions.id", ondelete="CASCADE"), nullable=False, unique=True)
+    binary_sha256 = Column(String(64), nullable=False)
+    status = Column(String(20), nullable=False, default="QUEUED")  # QUEUED, RUNNING, COMPLETE, FAILED
+    lease_token_hash = Column(String(64), nullable=True)
+    lease_expires_at = Column(DateTime, nullable=True)
+    worker_id = Column(String(100), nullable=True)
+    result_json = Column(Text, nullable=True)
+    error_code = Column(String(60), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=utc_now)
+    updated_at = Column(DateTime, nullable=False, default=utc_now, onupdate=utc_now)
