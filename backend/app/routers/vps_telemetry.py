@@ -7,6 +7,7 @@ import json
 
 from backend.app.database import get_db
 from backend.app.models import (
+    EaInstallation,
     BrokerAccount, VpsInstance, Command, Position, ClosedTrade, User, AuditLog
 )
 from backend.app.schemas import (
@@ -122,6 +123,25 @@ def stop_vps(
     return {"status": "SUCCESS", "message": "VPS halted"}
 
 # Account Remote Commands
+def _queue_for_account_installations(db: Session, acc: BrokerAccount, command_type: str, policy: Optional[str] = None, payload: Optional[dict] = None):
+    installations = db.query(EaInstallation).filter(EaInstallation.broker_account_id == acc.id).all()
+    targets = [inst.id for inst in installations] or [None]
+    commands = []
+    for installation_id in targets:
+        cmd = Command(
+            id=str(uuid.uuid4()),
+            tenant_id=acc.tenant_id,
+            broker_account_id=acc.id,
+            installation_id=installation_id,
+            command_type=command_type,
+            command_state="PENDING",
+            policy=policy,
+            payload=json.dumps(payload or {})
+        )
+        db.add(cmd)
+        commands.append(cmd)
+    return commands
+
 @router.post("/accounts/{account_id}/commands/pause", response_model=RemoteCommandResponse)
 def pause_account(
     account_id: str,
@@ -135,26 +155,15 @@ def pause_account(
     if not acc:
         raise HTTPException(status_code=404, detail="Account not found")
 
-    cmd = Command(
-        id=str(uuid.uuid4()),
-        tenant_id=current_user.tenant_id,
-        broker_account_id=acc.id,
-        command_type="PAUSE",
-        command_state="PENDING"
-    )
-    db.add(cmd)
+    commands = _queue_for_account_installations(db, acc, "PAUSE", payload={"entry_mode": "BLOCK_NEW_ENTRIES"})
     db.commit()
+    cmd = commands[0]
     db.refresh(cmd)
 
     return RemoteCommandResponse(
-        id=cmd.id,
-        accountId=acc.id,
-        installationId=None,
-        type="PAUSE",
-        state="PENDING",
-        emergencyPolicy=None,
-        createdAtUtc=cmd.created_at.strftime("%Y-%m-%d %H:%M:%S"),
-        acknowledgedAtUtc=None
+        id=cmd.id, accountId=acc.id, installationId=cmd.installation_id,
+        type="PAUSE", state="PENDING", emergencyPolicy=None,
+        createdAtUtc=cmd.created_at.strftime("%Y-%m-%d %H:%M:%S"), acknowledgedAtUtc=None
     )
 
 @router.post("/accounts/{account_id}/commands/resume", response_model=RemoteCommandResponse)
@@ -170,26 +179,15 @@ def resume_account(
     if not acc:
         raise HTTPException(status_code=404, detail="Account not found")
 
-    cmd = Command(
-        id=str(uuid.uuid4()),
-        tenant_id=current_user.tenant_id,
-        broker_account_id=acc.id,
-        command_type="RESUME",
-        command_state="PENDING"
-    )
-    db.add(cmd)
+    commands = _queue_for_account_installations(db, acc, "RESUME", payload={"entry_mode": "ALLOW_NEW_ENTRIES"})
     db.commit()
+    cmd = commands[0]
     db.refresh(cmd)
 
     return RemoteCommandResponse(
-        id=cmd.id,
-        accountId=acc.id,
-        installationId=None,
-        type="RESUME",
-        state="PENDING",
-        emergencyPolicy=None,
-        createdAtUtc=cmd.created_at.strftime("%Y-%m-%d %H:%M:%S"),
-        acknowledgedAtUtc=None
+        id=cmd.id, accountId=acc.id, installationId=cmd.installation_id,
+        type="RESUME", state="PENDING", emergencyPolicy=None,
+        createdAtUtc=cmd.created_at.strftime("%Y-%m-%d %H:%M:%S"), acknowledgedAtUtc=None
     )
 
 @router.post("/accounts/{account_id}/commands/emergency-stop", response_model=RemoteCommandResponse)
@@ -207,37 +205,25 @@ def emergency_stop_account(
         raise HTTPException(status_code=404, detail="Account not found")
 
     policy = payload.get("policy", "CLOSE_NEW_ENTRIES_ONLY")
-    cmd = Command(
-        id=str(uuid.uuid4()),
-        tenant_id=current_user.tenant_id,
-        broker_account_id=acc.id,
-        command_type="EMERGENCY_STOP",
-        command_state="PENDING",
-        policy=policy,
-        payload=json.dumps(payload)
+    # The UI always requests the explicit flatten-and-stop policy. Do not allow a weaker policy here.
+    policy = "CLOSE_ALL_MARKET_ORDERS"
+    commands = _queue_for_account_installations(
+        db, acc, "EMERGENCY_STOP", policy=policy,
+        payload={"policy": policy, "delete_pending_entry_orders": True, "stop_after_flatten": True}
     )
-    db.add(cmd)
-
     db.add(AuditLog(
-        tenant_id=current_user.tenant_id,
-        user_id=current_user.id,
-        action="EMERGENCY_STOP_DISPATCHED",
-        target_type="BROKER_ACCOUNT",
-        target_id=acc.id,
-        details=json.dumps({"policy": policy})
+        tenant_id=current_user.tenant_id, user_id=current_user.id,
+        action="EMERGENCY_STOP_DISPATCHED", target_type="BROKER_ACCOUNT",
+        target_id=acc.id, details=json.dumps({"policy": policy, "installation_commands": len(commands)})
     ))
     db.commit()
+    cmd = commands[0]
     db.refresh(cmd)
 
     return RemoteCommandResponse(
-        id=cmd.id,
-        accountId=acc.id,
-        installationId=None,
-        type="EMERGENCY_STOP",
-        state="PENDING",
-        emergencyPolicy=policy,
-        createdAtUtc=cmd.created_at.strftime("%Y-%m-%d %H:%M:%S"),
-        acknowledgedAtUtc=None
+        id=cmd.id, accountId=acc.id, installationId=cmd.installation_id,
+        type="EMERGENCY_STOP", state="PENDING", emergencyPolicy=policy,
+        createdAtUtc=cmd.created_at.strftime("%Y-%m-%d %H:%M:%S"), acknowledgedAtUtc=None
     )
 
 @router.get("/accounts/{account_id}/positions", response_model=List[PositionResponse])

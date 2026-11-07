@@ -22,7 +22,7 @@ class PublisherAccountConnectRequest(BaseModel):
     broker_name: str = Field(min_length=2, max_length=100)
     server_name: str = Field(min_length=2, max_length=100)
     account_number: str = Field(min_length=3, max_length=64)
-    environment: str = Field(default="DEMO", pattern="^DEMO$")
+    environment: str = Field(default="LIVE", pattern="^LIVE$", description="Developer public performance feed must use a live MT5 account")
     magic_number: int = Field(gt=0, le=9223372036854775807)
     symbol: str = Field(default="XAUUSD", min_length=1, max_length=30)
     timeframe: str = Field(default="M5", min_length=1, max_length=10)
@@ -152,8 +152,14 @@ def public_ea_performance(product_id: str, db: Session = Depends(get_db)):
     inst = db.query(EaInstallation).filter(EaInstallation.ea_product_id == product.id, EaInstallation.is_publisher_account == True).first()
     if not inst:
         return {"ea_product_id": product.id, "ea_name": product.name, "data_status": "NO_CONNECTED_OWNER_ACCOUNT",
-                "message": "The developer has not connected an MT5 performance account yet.", "trade_count": 0, "equity_curve": []}
+                "message": "The EA developer has not connected a LIVE MT5 performance publisher account yet.", "trade_count": 0, "equity_curve": []}
     account = db.query(BrokerAccount).filter(BrokerAccount.id == inst.broker_account_id).first()
+    # A legacy/demo publisher connection must never be represented as public live performance.
+    if not account or account.environment != "LIVE":
+        return {"ea_product_id": product.id, "ea_name": product.name,
+                "data_status": "NO_LIVE_OWNER_ACCOUNT",
+                "message": "Public performance is available only after the developer connects a LIVE MT5 account.",
+                "trade_count": 0, "equity_curve": []}
     trades = db.query(EaPerformanceTrade).filter(EaPerformanceTrade.installation_id == inst.id).order_by(EaPerformanceTrade.closed_at.asc()).all()
     snapshots = db.query(EaPerformanceSnapshot).filter(EaPerformanceSnapshot.installation_id == inst.id).order_by(EaPerformanceSnapshot.captured_at.asc()).all()
     net = sum(t.net_profit for t in trades)
@@ -170,10 +176,10 @@ def public_ea_performance(product_id: str, db: Session = Depends(get_db)):
     first = snapshots[0] if snapshots else None
     last = snapshots[-1] if snapshots else None
     days = max(0, (last.captured_at - first.captured_at).days) if first and last else 0
-    data_status = "BUILDING_TRACK_RECORD" if len(trades) < 10 or days < 7 else "CONNECTED_MT5_DEMO"
+    data_status = "BUILDING_TRACK_RECORD" if len(trades) < 10 or days < 7 else "CONNECTED_MT5_LIVE"
     return {"ea_product_id": product.id, "ea_name": product.name, "data_status": data_status,
-        "source_label": "Connected owner MT5 account · EA-reported data",
-        "account_scope_warning": "Use a dedicated MT5 account running only this EA. Other EAs or manual trades on the same account affect balance and equity snapshots.",
+        "source_label": "Developer LIVE MT5 publisher account · EA-reported data",
+        "account_scope_warning": "DEVELOPER LIVE ACCOUNT: use a dedicated live MT5 account running only this EA. Other EAs or manual trades on the same account affect balance and equity snapshots. No broker password is collected.",
         "environment": account.environment if account else "UNKNOWN", "currency": last.currency if last else (account.currency if account else "USD"),
         "track_record_started_at": first.captured_at.isoformat() + "Z" if first else None,
         "track_record_days": days, "last_updated_at": last.captured_at.isoformat() + "Z" if last else None,
