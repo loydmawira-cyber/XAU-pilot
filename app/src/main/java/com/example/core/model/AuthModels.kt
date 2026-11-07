@@ -36,7 +36,7 @@ data class AuthSession(
 
 data class ApiSettings(
     val isDemoMode: Boolean = false,
-    val customApiBaseUrl: String = "https://localhost/api/v1",
+    val customApiBaseUrl: String = "https://xau-pilot-api.onrender.com/api/v1",
     val webSocketUrl: String = "wss://localhost/ws",
     val autoRefreshIntervalSec: Int = 10
 )
