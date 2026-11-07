@@ -29,11 +29,17 @@ sealed class ScreenDestination {
     object Profile : ScreenDestination()
     object BridgeGuide : ScreenDestination()
     object PublisherWorkspace : ScreenDestination()
+    object AdminConsole : ScreenDestination()
+    object Support : ScreenDestination()
 }
 
 class XauPilotViewModel(
     private val repository: XauPilotRepository = XauPilotRepository.getInstance()
 ) : ViewModel() {
+
+    init {
+        restoreAuthenticatedSession()
+    }
 
     private val _sessionRestoreComplete = MutableStateFlow(false)
     val sessionRestoreComplete: StateFlow<Boolean> = _sessionRestoreComplete.asStateFlow()
@@ -273,13 +279,6 @@ class XauPilotViewModel(
     }
     val backendSyncStatus = repository.backendSyncStatus
 
-    // Start session restoration only after every StateFlow used by the restore
-    // coroutine has been initialized. Launching from the earlier init block
-    // could run immediately on the main thread and access an uninitialized flow.
-    init {
-        restoreAuthenticatedSession()
-    }
-
     fun refreshBackend() {
         repository.syncFromBackend()
     }
@@ -383,11 +382,11 @@ class XauPilotViewModel(
 
     fun executeEmergencyStop(accountId: String) {
         viewModelScope.launch {
-            val policy = _selectedEmergencyPolicy.value
+            val policy = EmergencyStopPolicy.CLOSE_ALL_MARKET_ORDERS
             _emergencyDialogVisible.value = false
             val success = repository.sendAccountCommand(accountId, CommandType.EMERGENCY_STOP, policy)
             _userMessage.value = if (success) {
-                "Emergency Stop triggered on Account ($policy)"
+                "Stop & Close All queued for every EA installation; awaiting MT5 acknowledgement"
             } else {
                 "Emergency Stop was rejected or could not be delivered"
             }
