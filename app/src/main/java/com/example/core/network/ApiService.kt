@@ -9,10 +9,10 @@ interface ApiService {
 
 
     // Developer EA management endpoints.
-    @POST("developer/register") suspend fun registerDeveloper(@Body body: Map<String, String>): Response<Map<String, Any>>
-    @POST("developer/ea-products") suspend fun createDeveloperEaProduct(@Body body: Map<String, Any>): Response<Map<String, Any>>
+    @POST("developer/register") suspend fun registerDeveloper(@Body body: Map<String, String>): Response<Map<String, @JvmSuppressWildcards Any>>
+    @POST("developer/ea-products") suspend fun createDeveloperEaProduct(@Body body: Map<String, @JvmSuppressWildcards Any>): Response<Map<String, @JvmSuppressWildcards Any>>
     @GET("developer/ea-products") suspend fun getDeveloperEaProducts(): Response<List<Map<String, Any?>>>
-    @POST("developer/ea-products/{productId}/performance-account") suspend fun connectPublisherPerformanceAccount(@Path("productId") productId: String, @Body body: Map<String, Any>): Response<Map<String, Any?>>
+    @POST("developer/ea-products/{productId}/performance-account") suspend fun connectPublisherPerformanceAccount(@Path("productId") productId: String, @Body body: Map<String, @JvmSuppressWildcards Any>): Response<Map<String, Any?>>
     @POST("developer/ea-products/{productId}/performance-account/rotate-token") suspend fun rotatePublisherPerformanceToken(@Path("productId") productId: String): Response<Map<String, Any?>>
     @POST("developer/ea-products/{productId}/versions") suspend fun createDeveloperEaVersion(@Path("productId") productId: String, @Body body: Map<String, String>): Response<Map<String, Any?>>
     @Multipart @POST("developer/ea-products/{productId}/versions/{versionId}/upload-binary") suspend fun uploadDeveloperEaBinary(@Path("productId") productId: String, @Path("versionId") versionId: String, @Part file: MultipartBody.Part): Response<Map<String, Any?>>
@@ -46,7 +46,7 @@ interface ApiService {
     suspend fun getBrokerAccounts(): Response<List<BrokerAccount>>
 
     @POST("broker-accounts")
-    suspend fun addBrokerAccount(@Body account: Map<String, Any>): Response<BrokerAccount>
+    suspend fun addBrokerAccount(@Body account: Map<String, @JvmSuppressWildcards Any>): Response<BrokerAccount>
 
     @GET("broker-accounts/{id}")
     suspend fun getBrokerAccount(@Path("id") id: String): Response<BrokerAccount>
@@ -86,7 +86,7 @@ interface ApiService {
     suspend fun getInstallations(): Response<List<EaInstallation>>
 
     @POST("ea-installations")
-    suspend fun createInstallation(@Body request: Map<String, Any>): Response<EaInstallation>
+    suspend fun createInstallation(@Body request: Map<String, @JvmSuppressWildcards Any>): Response<EaInstallation>
 
     @POST("ea-installations/{id}/activate")
     suspend fun activateInstallation(@Path("id") id: String): Response<EaInstallation>
@@ -96,7 +96,7 @@ interface ApiService {
 
     // Provider-neutral VPS and MT5 hosting adapter
     @POST("hosting/installations/{id}/provision")
-    suspend fun provisionInstallationHost(@Path("id") id: String): Response<Map<String, Any>>
+    suspend fun provisionInstallationHost(@Path("id") id: String): Response<Map<String, @JvmSuppressWildcards Any>>
 
     @GET("hosting/installations/{id}/jobs")
     suspend fun getHostingJobs(@Path("id") id: String): Response<List<Map<String, Any?>>>
@@ -106,7 +106,7 @@ interface ApiService {
     suspend fun getInputDefinitions(@Path("id") id: String): Response<List<ParameterDefinition>>
 
     @GET("ea-installations/{id}/configuration")
-    suspend fun getCurrentConfiguration(@Path("id") id: String): Response<Map<String, Any>>
+    suspend fun getCurrentConfiguration(@Path("id") id: String): Response<Map<String, @JvmSuppressWildcards Any>>
 
     @PUT("ea-installations/{id}/configuration")
     suspend fun updateConfiguration(
