@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from sqlalchemy import (
     Column, String, Boolean, Integer, Float, Text,
-    DateTime, ForeignKey, Numeric, BigInteger, Index
+    DateTime, ForeignKey, Numeric, BigInteger, Index, text
 )
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
@@ -47,6 +47,13 @@ class User(Base):
     created_at = Column(DateTime, nullable=False, default=utc_now)
 
     tenant = relationship("Tenant", back_populates="users")
+
+# Enforce exactly one platform Super Admin, including concurrent bootstrap attempts.
+Index(
+    "uq_users_single_super_administrator", User.role, unique=True,
+    postgresql_where=text("role = 'SUPER_ADMINISTRATOR'"),
+    sqlite_where=text("role = 'SUPER_ADMINISTRATOR'"),
+)
 
 class RevokedToken(Base):
     __tablename__ = "revoked_tokens"

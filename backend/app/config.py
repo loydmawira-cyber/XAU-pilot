@@ -7,13 +7,13 @@ class Settings:
     API_V1_STR: str = "/api/v1"
     EA_V1_STR: str = "/ea/v1"
     VERSION: str = "2.4.0"
-
+    
     # Database
     DATABASE_URL: str = os.getenv(
         "DATABASE_URL",
         "postgresql://xau_user@localhost:5432/xau_pilot_db"
     )
-
+    
     # Security & JWT. Production must provide stable secrets; ephemeral keys are dev-only.
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development").lower()
     _configured_jwt_secret = os.getenv("JWT_SECRET")
@@ -24,6 +24,9 @@ class Settings:
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 # 24 hours
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
 
+    # One-time first-admin secret; configure only in the backend host.
+    SUPER_ADMIN_BOOTSTRAP_TOKEN: str = os.getenv("SUPER_ADMIN_BOOTSTRAP_TOKEN", "")
+    
     # CORS (Strict origin list to prevent CSRF)
     ALLOWED_ORIGINS: List[str] = [
         origin.strip() for origin in os.getenv(
@@ -31,7 +34,7 @@ class Settings:
             "https://app.xaupilot.com,https://portal.xaupilot.com,http://localhost:3000"
         ).split(",") if origin.strip()
     ]
-
+    
     # Default Risk Boundaries
     DEFAULT_MAX_DAILY_LOSS: float = 500.0
     DEFAULT_MAX_TOTAL_EXPOSURE_LOTS: float = 2.0

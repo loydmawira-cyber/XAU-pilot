@@ -11,6 +11,16 @@ class UserLoginRequest(BaseModel):
     email: str
     password: str
 
+class SuperAdminBootstrapRequest(BaseModel):
+    email: str
+    password: str = Field(min_length=14, max_length=128)
+    full_name: str = Field(min_length=2, max_length=120)
+
+class RestrictedAdminCreateRequest(BaseModel):
+    email: str
+    password: str = Field(min_length=14, max_length=128)
+    full_name: str = Field(min_length=2, max_length=120)
+
 class TokenRefreshRequest(BaseModel):
     refresh_token: str
 
