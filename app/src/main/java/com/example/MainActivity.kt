@@ -117,7 +117,7 @@ fun MainAppContent(viewModel: XauPilotViewModel) {
             NavTabItem("Profile", Icons.Default.Person, ScreenDestination.Profile, "nav_profile_tab")
         )
     } else primaryNavTabs + NavTabItem("Profile", Icons.Default.Person, ScreenDestination.Profile, "nav_profile_tab")
-    val navTabs = if (isGuestMode) allNavTabs.take(2) else roleTabs
+    val navTabs = if (isGuestMode) primaryNavTabs.take(2) else roleTabs
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
