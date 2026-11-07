@@ -151,6 +151,38 @@ fun PublisherWorkspaceScreen(viewModel: XauPilotViewModel, modifier: Modifier = 
                                             color = TextPrimaryDark, fontWeight = FontWeight.SemiBold)
                                         Text("Type: ${parameter["type"]} · Extracted default: ${parameter["default"]}",
                                             color = TextSecondaryDark, fontSize = 11.sp)
+                                        if (parameter["type"] == "boolean") {
+                                            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                                                Checkbox(
+                                                    checked = parameter["default"] == true,
+                                                    onCheckedChange = { viewModel.updatePublisherReviewParameter(index, "default", it) }
+                                                )
+                                                Text("Default value: ${parameter["default"]}", color = TextPrimaryDark, fontSize = 12.sp)
+                                            }
+                                        } else {
+                                            OutlinedTextField(
+                                                value = parameter["default_draft"]?.toString() ?: parameter["default"]?.toString().orEmpty(),
+                                                onValueChange = { viewModel.updatePublisherReviewParameter(index, "default_draft", it) },
+                                                label = { Text("Customer default value") },
+                                                modifier = Modifier.fillMaxWidth(),
+                                                singleLine = true
+                                            )
+                                        }
+                                        if (parameter["type"] == "integer" || parameter["type"] == "decimal") {
+                                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                listOf("minimum", "maximum", "step").forEach { field ->
+                                                    OutlinedTextField(
+                                                        value = parameter["${field}_draft"]?.toString()
+                                                            ?: parameter[field]?.toString().orEmpty(),
+                                                        onValueChange = { viewModel.updatePublisherReviewParameter(index, "${field}_draft", it) },
+                                                        label = { Text(field.replaceFirstChar { ch -> ch.uppercase() }) },
+                                                        modifier = Modifier.weight(1f),
+                                                        singleLine = true
+                                                    )
+                                                }
+                                            }
+                                            Text("Leave numeric bounds blank if you do not want to enforce them.", color = TextSecondaryDark, fontSize = 10.sp)
+                                        }
                                         Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                                             Checkbox(
                                                 checked = parameter["visible_to_customer"] == true,
@@ -172,6 +204,13 @@ fun PublisherWorkspaceScreen(viewModel: XauPilotViewModel, modifier: Modifier = 
                                                 onCheckedChange = { viewModel.updatePublisherReviewParameter(index, "requires_restart", it) }
                                             )
                                             Text("Requires EA restart after change", color = TextPrimaryDark, fontSize = 12.sp)
+                                        }
+                                        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                                            Checkbox(
+                                                checked = parameter["requires_no_open_positions"] == true,
+                                                onCheckedChange = { viewModel.updatePublisherReviewParameter(index, "requires_no_open_positions", it) }
+                                            )
+                                            Text("Change only when no positions are open", color = TextPrimaryDark, fontSize = 12.sp)
                                         }
                                     }
                                 }
