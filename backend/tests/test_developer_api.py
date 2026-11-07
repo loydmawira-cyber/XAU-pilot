@@ -228,6 +228,43 @@ class DeveloperApiTests(unittest.TestCase):
         self.assertEqual(self.c.post(f"{API}/admin/ea-review/{p['id']}/approve", headers=dev["h"]).status_code, 403)
         self.assertEqual(self.c.post(f"{API}/admin/ea-review/{p['id']}/approve", headers=admin["h"]).status_code, 200)
 
+    def test_owner_mt5_performance_feed_is_authenticated_and_public_aggregate_only(self):
+        import time
+        from backend.app.models import EaProduct
+        dev = self.developer("perf-owner@xaupilot.test")
+        product = self.product(dev, "PERF001")
+        with SessionLocal() as db:
+            db.query(EaProduct).filter(EaProduct.id == product["id"]).update({"is_published": True, "listing_status": "APPROVED"})
+            db.commit()
+        connect = self.c.post(f"{API}/developer/ea-products/{product['id']}/performance-account", headers=dev["h"], json={
+            "label": "Owner Demo MT5", "broker_name": "Demo Broker", "server_name": "Demo-Server",
+            "account_number": "12345678", "environment": "DEMO", "magic_number": 880001,
+            "symbol": "XAUUSD", "timeframe": "M5"})
+        self.assertEqual(connect.status_code, 201, connect.text)
+        body = connect.json()
+        self.assertEqual(body["account_number_masked"], "****5678")
+        self.assertTrue(body["ea_bridge_token"])
+        self.assertEqual(self.c.post("/ea/v1/performance/snapshot", json={"installation_id": body["installation_id"], "balance": 1000, "equity": 1000, "captured_at_epoch": int(time.time())}).status_code, 401)
+        token_headers = {"Authorization": "Bearer " + body["ea_bridge_token"]}
+        now = int(time.time())
+        snapshot = {"installation_id": body["installation_id"], "balance": 1000, "equity": 995,
+                    "currency": "USD", "captured_at_epoch": now}
+        stored = self.c.post("/ea/v1/performance/snapshot", headers=token_headers, json=snapshot)
+        self.assertEqual(stored.status_code, 201, stored.text)
+        trade = {"installation_id": body["installation_id"], "deal_ticket": 90001, "position_id": 70001,
+                 "symbol": "XAUUSD", "direction": "BUY", "volume": 0.01, "close_price": 2350.5,
+                 "profit": 12.0, "commission": -0.5, "swap": -0.1, "currency": "USD", "closed_at_epoch": now}
+        saved = self.c.post("/ea/v1/performance/trade", headers=token_headers, json=trade)
+        self.assertEqual(saved.status_code, 200, saved.text)
+        duplicate = self.c.post("/ea/v1/performance/trade", headers=token_headers, json=trade)
+        self.assertEqual(duplicate.status_code, 200, duplicate.text)
+        public = self.c.get(f"{API}/marketplace/ea-products/{product['id']}/performance")
+        self.assertEqual(public.status_code, 200, public.text)
+        self.assertEqual(public.json()["closed_trades"], 1)
+        self.assertAlmostEqual(public.json()["net_profit"], 11.4, places=2)
+        self.assertNotIn("ea_bridge_token", public.text)
+        self.assertNotIn("12345678", public.text)
+
     def test_download_requires_licence(self):
         dev, cust = self.developer("d10@x.com"), self.user("c10@x.com")
         admin = self.user("adm10@x.com", role="ADMINISTRATOR")
