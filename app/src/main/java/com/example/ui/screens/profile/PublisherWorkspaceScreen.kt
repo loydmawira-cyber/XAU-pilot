@@ -7,6 +7,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.CloudUpload
@@ -27,6 +28,8 @@ fun PublisherWorkspaceScreen(viewModel: XauPilotViewModel, modifier: Modifier = 
     val context = LocalContext.current
     val busy by viewModel.publisherBusy.collectAsState()
     val result by viewModel.publisherResult.collectAsState()
+    val createdProductId by viewModel.publisherProductId.collectAsState()
+    val bridgeToken by viewModel.publisherBridgeToken.collectAsState()
     val session by viewModel.authSession.collectAsState()
     val authError by viewModel.authUiError.collectAsState()
     var email by remember { mutableStateOf("") }
@@ -41,6 +44,10 @@ fun PublisherWorkspaceScreen(viewModel: XauPilotViewModel, modifier: Modifier = 
     var fileUri by remember { mutableStateOf<android.net.Uri?>(null) }
     var fileName by remember { mutableStateOf<String?>(null) }
     var parametersJson by remember { mutableStateOf("[]") }
+    var brokerName by remember { mutableStateOf("") }
+    var brokerServer by remember { mutableStateOf("") }
+    var mt5AccountNumber by remember { mutableStateOf("") }
+    var mt5MagicNumber by remember { mutableStateOf("880001") }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         fileUri = uri
         fileName = uri?.lastPathSegment?.substringAfterLast('/')
@@ -128,9 +135,32 @@ fun PublisherWorkspaceScreen(viewModel: XauPilotViewModel, modifier: Modifier = 
                 }
             }
         }
+        if (createdProductId != null) {
+            item {
+                Card(colors = CardDefaults.cardColors(containerColor = CharcoalSurface), border = BorderStroke(1.dp, GoldPrimary.copy(alpha = .35f))) {
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                        Text("Connect owner MT5 account for public performance", color = GoldLight, fontWeight = FontWeight.Bold)
+                        Text("Run this EA on a dedicated MT5 account. Use an account that is not running other EAs or manual trades, otherwise account equity and drawdown figures can be affected.", color = TextSecondaryDark, fontSize = 11.sp)
+                        OutlinedTextField(brokerName, { brokerName = it }, label = { Text("Broker name") }, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(brokerServer, { brokerServer = it }, label = { Text("MT5 server") }, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(mt5AccountNumber, { mt5AccountNumber = it }, label = { Text("MT5 account number (no password)") }, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(mt5MagicNumber, { mt5MagicNumber = it }, label = { Text("EA magic number") }, modifier = Modifier.fillMaxWidth())
+                        Text("Performance tracking is DEMO-only in this release.", color = TradingAmber, fontSize = 11.sp)
+                        Button(onClick = { viewModel.connectPublisherPerformanceAccount(brokerName, brokerServer, mt5AccountNumber, "DEMO", mt5MagicNumber) },
+                            enabled = !busy && brokerName.isNotBlank() && brokerServer.isNotBlank() && mt5AccountNumber.length >= 3, modifier = Modifier.fillMaxWidth()) {
+                            Text("Connect owner MT5 account")
+                        }
+                        bridgeToken?.let { token ->
+                            Text("EA bridge token — copy this into the bridge-enabled EA settings. It will not be shown again:", color = TradingAmber, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            SelectionContainer { Text(token, color = TextPrimaryDark, fontSize = 11.sp) }
+                        }
+                    }
+                }
+            }
+        }
         item {
             Text("Publishing rules", color = GoldLight, fontWeight = FontWeight.Bold)
-            Text("A successful upload is not a publication. The backend must complete its configured malware scan and administrator review before the EA appears in the public marketplace. MT5 installation and trading are a later integration phase.", color = TextSecondaryDark, fontSize = 12.sp)
+            Text("A successful upload is not a publication. The backend must complete its configured malware scan and administrator review before the EA appears in the public marketplace. Owner performance tracking requires a bridge-compatible EA build on the dedicated demo MT5 account; customer installation and trading are separate permissions.", color = TextSecondaryDark, fontSize = 12.sp)
         }
         }
     }
