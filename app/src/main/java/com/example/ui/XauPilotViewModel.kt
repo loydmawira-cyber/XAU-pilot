@@ -35,10 +35,6 @@ class XauPilotViewModel(
     private val repository: XauPilotRepository = XauPilotRepository.getInstance()
 ) : ViewModel() {
 
-    init {
-        restoreAuthenticatedSession()
-    }
-
     private val _sessionRestoreComplete = MutableStateFlow(false)
     val sessionRestoreComplete: StateFlow<Boolean> = _sessionRestoreComplete.asStateFlow()
     private val _isGuestMode = MutableStateFlow(false)
@@ -103,13 +99,30 @@ class XauPilotViewModel(
     val accounts = repository.accounts
     val selectedAccountId = repository.selectedAccountId
     val eaProducts = repository.eaProducts
-    val eaSubmissions = repository.eaSubmissions
-    private val _publisherBusy = MutableStateFlow(false)
-    val publisherBusy: StateFlow<Boolean> = _publisherBusy.asStateFlow()
-    private val _publisherResult = MutableStateFlow<String?>(null)
-    val publisherResult: StateFlow<String?> = _publisherResult.asStateFlow()
+    private val _eaPerformance = MutableStateFlow<Map<String, Map<String, Any?>>>(emptyMap())
+    val eaPerformance: StateFlow<Map<String, Map<String, Any?>>> = _eaPerformance.asStateFlow()
+    private val _eaPerformanceLoading = MutableStateFlow<Set<String>>(emptySet())
+    val eaPerformanceLoading: StateFlow<Set<String>> = _eaPerformanceLoading.asStateFlow()
 
-    fun uploadAndPublishDraft(
+    fun loadPublicEaPerformance(productId: String) {
+        if (_eaPerformance.value.containsKey(productId) || _eaPerformanceLoading.value.contains(productId)) return
+        viewModelScope.launch {
+            _eaPerformanceLoading.update { it + productId }
+            try {
+                val response = ApiClient.apiService.getEaPublicPerformance(productId)
+                if (response.isSuccessful && response.body() != null) {
+                    _eaPerformance.update { it + (productId to response.body()!!) }
+                } else {
+                    _eaPerformance.update { it + (productId to mapOf("data_status" to "UNAVAILABLE", "message" to "Performance data is temporarily unavailable.")) }
+                }
+            } catch (_: Exception) {
+                _eaPerformance.update { it + (productId to mapOf("data_status" to "UNAVAILABLE", "message" to "Connect to XAU Pilot to load live performance data.")) }
+            } finally {
+                _eaPerformanceLoading.update { it - productId }
+            }
+        }
+    }
+        fun uploadAndPublishDraft(
         context: Context, fileUri: Uri, name: String, version: String, description: String,
         category: String, monthlyPrice: Double, manifestParametersJson: String
     ) {
@@ -137,6 +150,7 @@ class XauPilotViewModel(
                 ))
                 if (!productResponse.isSuccessful) error("Product creation failed: ${productResponse.code()} ${productResponse.errorBody()?.string().orEmpty()}")
                 val productId = productResponse.body()?.get("id")?.toString() ?: error("Backend did not return product ID")
+                _publisherProductId.value = productId
                 val versionResponse = api.createDeveloperEaVersion(productId, mapOf("version" to version, "release_notes" to "Initial release"))
                 if (!versionResponse.isSuccessful) error("Version creation failed: ${versionResponse.code()} ${versionResponse.errorBody()?.string().orEmpty()}")
                 val versionId = versionResponse.body()?.get("id")?.toString() ?: error("Backend did not return version ID")
@@ -184,6 +198,7 @@ class XauPilotViewModel(
             }
         }
     }
+
     val licenses = repository.licenses
     val installations = repository.installations
     val selectedInstallationId = repository.selectedInstallationId
@@ -223,7 +238,13 @@ class XauPilotViewModel(
             } finally { _publisherBusy.value = false }
         }
     }
+
     val backendSyncStatus = repository.backendSyncStatus
+
+    // Restore the session only after all StateFlows above have been initialized.
+    init {
+        restoreAuthenticatedSession()
+    }
 
     fun refreshBackend() {
         repository.syncFromBackend()
@@ -433,3 +454,36 @@ class XauPilotViewModel(
         _userMessage.value = "API endpoint updated"
     }
 }
+ val eaSubmissions = repository.eaSubmissions
+    private val _publisherBusy = MutableStateFlow(false)
+    val publisherBusy: StateFlow<Boolean> = _publisherBusy.asStateFlow()
+    private val _publisherResult = MutableStateFlow<String?>(null)
+    val publisherResult: StateFlow<String?> = _publisherResult.asStateFlow()
+    private val _publisherProductId = MutableStateFlow<String?>(null)
+    val publisherProductId: StateFlow<String?> = _publisherProductId.asStateFlow()
+    private val _publisherBridgeToken = MutableStateFlow<String?>(null)
+    val publisherBridgeToken: StateFlow<String?> = _publisherBridgeToken.asStateFlow()
+
+    fun connectPublisherPerformanceAccount(broker: String, server: String, accountNumber: String, environment: String, magicNumber: String) {
+        viewModelScope.launch {
+            _publisherBusy.value = true
+            _publisherResult.value = null
+            _publisherBridgeToken.value = null
+            try {
+                val productId = _publisherProductId.value ?: error("Upload your EA first to select the EA that will publish its performance.")
+                require(broker.isNotBlank() && server.isNotBlank() && accountNumber.length >= 3) { "Enter broker, server and MT5 account number." }
+                val magic = magicNumber.toLongOrNull()?.takeIf { it > 0 } ?: error("Magic number must be a positive integer.")
+                val response = ApiClient.apiService.connectPublisherPerformanceAccount(productId, mapOf(
+                    "label" to "Publisher MT5 account", "broker_name" to broker.trim(), "server_name" to server.trim(),
+                    "account_number" to accountNumber.trim(), "environment" to environment, "magic_number" to magic,
+                    "symbol" to "XAUUSD", "timeframe" to "M5"
+                ))
+                if (!response.isSuccessful) error("MT5 performance account setup failed: ${response.code()} ${response.errorBody()?.string().orEmpty()}")
+                val body = response.body() ?: error("Backend returned an empty response")
+                _publisherBridgeToken.value = body["ea_bridge_token"]?.toString()
+                _publisherResult.value = "MT5 owner account connected. Installation ID: ${body["installation_id"]}. Copy the bridge token below and configure your bridge-enabled EA in MT5. The token is shown once."
+            } catch (e: Exception) {
+                _publisherResult.value = e.message ?: "Could not connect the MT5 account."
+            } finally { _publisherBusy.value = false }
+        }
+    }
