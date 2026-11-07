@@ -389,8 +389,13 @@ def publish_version(product_id: str, version_id: str, user: User = Depends(get_c
         problems.append("upload the EX5 binary")
     elif binary.scan_status != "CLEAN":
         problems.append(f"binary scan must be CLEAN before publication (current status: {binary.scan_status})")
+    extraction = db.query(EaExtractionJob).filter(EaExtractionJob.version_id == version.id).first()
+    if not extraction or extraction.status != "COMPLETE":
+        problems.append("automatic MT5 input extraction must complete before publication")
+    elif binary and extraction.binary_sha256 != binary.sha256:
+        problems.append("MT5 extraction result does not match the currently uploaded EX5 binary")
     if not row:
-        problems.append("upload the input manifest")
+        problems.append("developer-reviewed input schema is required before publication")
     if problems:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, {"must": problems})
     errors = _revalidate(product, version, user, row.canonical_json)
