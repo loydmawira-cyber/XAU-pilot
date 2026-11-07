@@ -47,3 +47,41 @@ Until your EA does this, the integration is **pending developer-side MQL5 work**
 ## 4. Server settings (operators)
 `MANIFEST_SIGNING_KEY` (>=32 chars, separate from `JWT_SECRET`; publishing is refused without it),
 `EA_STORAGE_DIR`, `EA_MAX_BINARY_BYTES`, `EA_SCAN_COMMAND`. See `backend/.env.example`.
+
+
+## 5. Publisher MT5 performance reporting (DEMO-only in this release)
+
+After creating and validating your EA product, sign in to Publisher Workspace and connect a **dedicated DEMO MT5 account** for that EA. Enter the broker name, server, account number, and the EA magic number. XAU Pilot does not request or store your MT5 password. The API returns an installation ID and a one-time EA bridge token. Keep the token private; if it is lost, rotate it from the authenticated developer API.
+
+The connected account must run only this EA. Do not run other EAs or manual trades on it: balance/equity snapshots are account-wide and would otherwise include unrelated activity.
+
+Add the bridge to your EA source and merge these calls into your existing event handlers (do not create duplicate event handlers):
+
+```mql5
+#include \"XauPilotBridge.mqh\"
+
+input string XauPilotBackendUrl = \"https://YOUR-API-HOST\";
+input string XauPilotInstallationId = \"INSTALLATION_ID_FROM_XAU_PILOT\";
+input string XauPilotBridgeToken = \"ONE_TIME_TOKEN_FROM_XAU_PILOT\";
+input ulong XauPilotMagicNumber = 880001;
+
+int OnInit() {
+   if(!XauPilot_Init(XauPilotBackendUrl, XauPilotInstallationId, XauPilotBridgeToken, XauPilotMagicNumber, 15))
+      return INIT_FAILED;
+   return INIT_SUCCEEDED;
+}
+
+void OnTimer() { XauPilot_OnTimer(); }
+
+void OnTradeTransaction(const MqlTradeTransaction &trans,
+                        const MqlTradeRequest &request,
+                        const MqlTradeResult &result) {
+   XauPilot_ReportTradeEvent(trans, request, result);
+}
+
+void OnDeinit(const int reason) { XauPilot_Deinit(reason); }
+```
+
+The bridge sends a completed position only after it is fully closed, including the position's recorded profit, commission and swap, and periodically sends balance/equity snapshots. MT5 must allow the API HTTPS host in Tools → Options → Expert Advisors → Allow WebRequest for listed URL. Compile and test the integrated EA in MetaEditor on DEMO before relying on the public track record.
+
+Guests can read `GET /api/v1/marketplace/ea-products/{product_id}/performance`. The marketplace shows actual ingested MT5 figures only. It labels the feed as EA-reported, not an independently audited broker statement. It shows `BUILDING_TRACK_RECORD` until at least 10 closed trades and 7 days of snapshots are available.
