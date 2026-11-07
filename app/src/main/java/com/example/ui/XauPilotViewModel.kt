@@ -136,6 +136,23 @@ class XauPilotViewModel(
     val publisherResult: StateFlow<String?> = _publisherResult.asStateFlow()
     private val _publisherProductId = MutableStateFlow<String?>(null)
     val publisherProductId: StateFlow<String?> = _publisherProductId.asStateFlow()
+    private val _publisherVersionId = MutableStateFlow<String?>(null)
+    private val _publisherExtraction = MutableStateFlow<Map<String, Any?>?>(null)
+    val publisherExtraction: StateFlow<Map<String, Any?>?> = _publisherExtraction.asStateFlow()
+
+    fun refreshPublisherExtraction() {
+        val productId = _publisherProductId.value ?: return
+        val versionId = _publisherVersionId.value ?: return
+        viewModelScope.launch {
+            try {
+                val response = ApiClient.apiService.getDeveloperEaExtraction(productId, versionId)
+                if (response.isSuccessful) _publisherExtraction.value = response.body()
+                else _publisherResult.value = "Could not refresh extraction status: ${response.code()}"
+            } catch (e: Exception) {
+                _publisherResult.value = e.message ?: "Could not refresh extraction status"
+            }
+        }
+    }
     private val _publisherBridgeToken = MutableStateFlow<String?>(null)
     val publisherBridgeToken: StateFlow<String?> = _publisherBridgeToken.asStateFlow()
 
@@ -203,6 +220,7 @@ class XauPilotViewModel(
                 ))
                 if (!versionResponse.isSuccessful) error("EA version setup failed: ${versionResponse.code()} ${versionResponse.errorBody()?.string().orEmpty()}")
                 val versionId = versionResponse.body()?.get("id")?.toString() ?: error("Backend did not return version ID")
+                _publisherVersionId.value = versionId
                 val bytes = withContext(Dispatchers.IO) {
                     context.contentResolver.openInputStream(fileUri)?.use { input ->
                         val output = ByteArrayOutputStream()
@@ -225,7 +243,8 @@ class XauPilotViewModel(
                 val upload = api.uploadDeveloperEaBinary(productId, versionId, part)
                 if (!upload.isSuccessful) error("EA upload failed: ${upload.code()} ${upload.errorBody()?.string().orEmpty()}")
                 val scan = ((upload.body()?.get("binary") as? Map<*, *>)?.get("scan_status") as? String) ?: "UNKNOWN"
-                _publisherResult.value = "EX5 uploaded and saved as a draft. File scan: $scan. Automatic MT5 input extraction is not connected yet, so this EA cannot be published until extraction and review are completed. Product ID: $productId"
+                refreshPublisherExtraction()
+                _publisherResult.value = "EX5 uploaded and saved as a draft. File scan: $scan. Extraction status is shown below. Product ID: $productId"
             } catch (e: Exception) {
                 _publisherResult.value = e.message ?: "EA upload failed"
             } finally {
