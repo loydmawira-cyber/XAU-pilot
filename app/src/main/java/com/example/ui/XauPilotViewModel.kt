@@ -179,7 +179,39 @@ class XauPilotViewModel(
             return
         }
         val current = _publisherReviewManifest.value ?: return
-        val params = current["parameters"] as? List<*> ?: emptyList<Any>()
+        val rawParams = current["parameters"] as? List<*> ?: emptyList<Any>()
+        val params = try {
+            rawParams.map { raw ->
+                val item = (raw as? Map<*, *>)?.entries?.associate { it.key.toString() to it.value }?.toMutableMap()
+                    ?: error("Invalid parameter review entry")
+                val type = item["type"]?.toString() ?: error("Missing parameter type")
+                val defaultDraft = item.remove("default_draft")?.toString()
+                if (defaultDraft != null) {
+                    item["default"] = when (type) {
+                        "integer" -> defaultDraft.toIntOrNull() ?: error("Enter a whole-number default for ${item["label"]}")
+                        "decimal" -> defaultDraft.toDoubleOrNull()?.takeIf { it.isFinite() } ?: error("Enter a valid numeric default for ${item["label"]}")
+                        "boolean" -> defaultDraft.toBooleanStrictOrNull() ?: error("Choose true or false for ${item["label"]}")
+                        else -> defaultDraft
+                    }
+                }
+                listOf("minimum", "maximum", "step").forEach { field ->
+                    val draft = item.remove("${field}_draft")?.toString()?.trim()
+                    if (!draft.isNullOrEmpty()) {
+                        item[field] = when (type) {
+                            "integer" -> draft.toIntOrNull() ?: error("Enter a whole-number $field for ${item["label"]}")
+                            "decimal" -> draft.toDoubleOrNull()?.takeIf { it.isFinite() } ?: error("Enter a valid numeric $field for ${item["label"]}")
+                            else -> error("$field is only valid for numeric inputs")
+                        }
+                    } else {
+                        item.remove(field)
+                    }
+                }
+                item
+            }
+        } catch (e: Exception) {
+            _publisherResult.value = e.message ?: "Check the input values"
+            return
+        }
         val manifest = mapOf<String, Any>(
             "schema_version" to "1.0", "ea_product_id" to productId,
             "ea_version" to "1.0.0", "developer_id" to userId,
