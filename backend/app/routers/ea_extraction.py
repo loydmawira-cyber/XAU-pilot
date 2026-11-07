@@ -75,8 +75,15 @@ def claim_job(req: ClaimRequest, authorization: str | None = Header(default=None
         EaExtractionJob.status == "RUNNING",
         EaExtractionJob.lease_expires_at < now
     ).update({"status": "QUEUED", "lease_token_hash": None, "lease_expires_at": None, "worker_id": None})
-    job = db.query(EaExtractionJob).filter(EaExtractionJob.status == "QUEUED")\
-        .order_by(EaExtractionJob.created_at.asc()).with_for_update(skip_locked=True).first()
+    # Never hand an EX5 to a worker until an actual scanner has marked the
+    # exact stored binary CLEAN. NOT_CONFIGURED and ERROR must remain blocked.
+    job = db.query(EaExtractionJob).join(
+        EaBinaryPackage, EaBinaryPackage.version_id == EaExtractionJob.version_id
+    ).filter(
+        EaExtractionJob.status == "QUEUED",
+        EaBinaryPackage.scan_status == "CLEAN",
+        EaBinaryPackage.sha256 == EaExtractionJob.binary_sha256,
+    ).order_by(EaExtractionJob.created_at.asc()).with_for_update(skip_locked=True).first()
     if not job:
         db.commit()
         return {"job": None}
