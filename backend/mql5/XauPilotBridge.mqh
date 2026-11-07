@@ -56,15 +56,15 @@ string   XauPilot_ActiveSession        = "LONDON_NY";
 
 // Forward declarations
 bool XauPilot_CheckLicense();
+bool XauPilot_AllowNewEntries();
+bool XauPilot_IsPaused();
 void XauPilot_StartTimer();
-void XauPilot_OnTimer();
 void XauPilot_SendStatus();
 void XauPilot_ProcessCommands();
 void XauPilot_AcknowledgeCommand(const string cmd_id, const string status, const string err_msg = "");
 void XauPilot_LoadConfiguration();
 void XauPilot_AcknowledgeConfiguration(const int version, const string status, const string reason = "");
 void XauPilot_SendPositions();
-void XauPilot_SendPerformanceSnapshot();
 bool XauPilot_ValidateParameters(double lot, int sl, int tp, string &out_error);
 int  XauPilot_HttpPost(const string endpoint, const string json_body, string &out_response);
 int  XauPilot_HttpGet(const string endpoint, string &out_response);
@@ -99,10 +99,15 @@ bool XauPilot_Init(const string backend_url,
       return false;
    }
 
+   string state_key = "XAU_PILOT_STATE_" + g_xau_config.installation_id;
+   if(GlobalVariableCheck(state_key))
+      g_xau_state = (ENUM_XAUPILOT_STATE)(int)GlobalVariableGet(state_key);
+   else
+      g_xau_state = XAUPILOT_STATE_ACTIVE;
+
    XauPilot_StartTimer();
-   XauPilot_OnTimer(); // Immediate initial sync
-   g_xau_state = XAUPILOT_STATE_ACTIVE;
-   Print("[XAU-PILOT] Initialization successful. Active remote control established.");
+   XauPilot_OnTimer(); // Immediate initial sync; do not overwrite a persisted pause/stop state.
+   PrintFormat("[XAU-PILOT] Initialization successful. Remote state: %d", (int)g_xau_state);
    return true;
 }
 
@@ -132,7 +137,17 @@ void XauPilot_OnTimer() {
 
    // 4. Send Open Positions Snapshot
    XauPilot_SendPositions();
-   XauPilot_SendPerformanceSnapshot();
+}
+
+
+// Host EA must call this immediately before opening any new position/order.
+// Existing-position management should continue while this returns false.
+bool XauPilot_AllowNewEntries() {
+   return (g_xau_state == XAUPILOT_STATE_ACTIVE);
+}
+
+bool XauPilot_IsPaused() {
+   return (g_xau_state == XAUPILOT_STATE_PAUSED);
 }
 
 //+------------------------------------------------------------------+
@@ -198,36 +213,72 @@ void XauPilot_ProcessCommands() {
 
    if(cmd_type == "PAUSE") {
       g_xau_state = XAUPILOT_STATE_PAUSED;
+      GlobalVariableSet("XAU_PILOT_STATE_" + g_xau_config.installation_id, (double)g_xau_state);
       XauPilot_AcknowledgeCommand(cmd_id, "APPLIED");
    } else if(cmd_type == "RESUME") {
       g_xau_state = XAUPILOT_STATE_ACTIVE;
+      GlobalVariableSet("XAU_PILOT_STATE_" + g_xau_config.installation_id, (double)g_xau_state);
       XauPilot_AcknowledgeCommand(cmd_id, "APPLIED");
    } else if(cmd_type == "STOP") {
       g_xau_state = XAUPILOT_STATE_STOPPED;
+      GlobalVariableSet("XAU_PILOT_STATE_" + g_xau_config.installation_id, (double)g_xau_state);
       XauPilot_AcknowledgeCommand(cmd_id, "APPLIED");
    } else if(cmd_type == "EMERGENCY_STOP") {
+      // Block all new entries immediately, then flatten this EA's exposure.
       g_xau_state = XAUPILOT_STATE_EMERGENCY;
+      GlobalVariableSet("XAU_PILOT_STATE_" + g_xau_config.installation_id, (double)g_xau_state);
+      bool all_actions_ok = true;
       if(policy == "CLOSE_ALL_MARKET_ORDERS") {
-         // Close all positions matching this magic number
+         // Close every open position belonging to this EA magic number.
          for(int i = PositionsTotal() - 1; i >= 0; i--) {
             ulong ticket = PositionGetTicket(i);
-            if(PositionGetInteger(POSITION_MAGIC) == (long)g_xau_config.magic_number) {
-               MqlTradeRequest req;
-               MqlTradeResult res;
-               ZeroMemory(req);
-               ZeroMemory(res);
-               req.action = TRADE_ACTION_DEAL;
-               req.position = ticket;
-               req.symbol = PositionGetString(POSITION_SYMBOL);
-               req.volume = PositionGetDouble(POSITION_VOLUME);
-               req.deviation = 10;
-               req.type = (PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY) ? ORDER_TYPE_SELL : ORDER_TYPE_BUY;
-               req.price = (req.type == ORDER_TYPE_SELL) ? SymbolInfoDouble(req.symbol, SYMBOL_BID) : SymbolInfoDouble(req.symbol, SYMBOL_ASK);
-               OrderSend(req, res);
+            if(ticket == 0 || PositionGetInteger(POSITION_MAGIC) != (long)g_xau_config.magic_number) continue;
+            MqlTradeRequest req;
+            MqlTradeResult res;
+            ZeroMemory(req);
+            ZeroMemory(res);
+            req.action = TRADE_ACTION_DEAL;
+            req.position = ticket;
+            req.symbol = PositionGetString(POSITION_SYMBOL);
+            req.volume = PositionGetDouble(POSITION_VOLUME);
+            req.deviation = 20;
+            req.type = (PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY) ? ORDER_TYPE_SELL : ORDER_TYPE_BUY;
+            req.price = (req.type == ORDER_TYPE_SELL) ? SymbolInfoDouble(req.symbol, SYMBOL_BID) : SymbolInfoDouble(req.symbol, SYMBOL_ASK);
+            long filling_flags = SymbolInfoInteger(req.symbol, SYMBOL_FILLING_MODE);
+            if((filling_flags & SYMBOL_FILLING_FOK) == SYMBOL_FILLING_FOK) req.type_filling = ORDER_FILLING_FOK;
+            else if((filling_flags & SYMBOL_FILLING_IOC) == SYMBOL_FILLING_IOC) req.type_filling = ORDER_FILLING_IOC;
+            else req.type_filling = ORDER_FILLING_RETURN;
+            if(!OrderSend(req, res) || (res.retcode != TRADE_RETCODE_DONE && res.retcode != TRADE_RETCODE_DONE_PARTIAL)) {
+               all_actions_ok = false;
+               PrintFormat("[XAU-PILOT] Failed to close position %I64u (retcode %u)", ticket, res.retcode);
             }
          }
+
+         // Delete all EA-owned pending entry orders (stop, limit and stop-limit).
+         for(int j = OrdersTotal() - 1; j >= 0; j--) {
+            ulong order_ticket = OrderGetTicket(j);
+            if(order_ticket == 0 || OrderGetInteger(ORDER_MAGIC) != (long)g_xau_config.magic_number) continue;
+            ENUM_ORDER_TYPE order_type = (ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE);
+            bool is_pending_entry = (order_type == ORDER_TYPE_BUY_LIMIT || order_type == ORDER_TYPE_SELL_LIMIT ||
+                                     order_type == ORDER_TYPE_BUY_STOP || order_type == ORDER_TYPE_SELL_STOP ||
+                                     order_type == ORDER_TYPE_BUY_STOP_LIMIT || order_type == ORDER_TYPE_SELL_STOP_LIMIT);
+            if(!is_pending_entry) continue;
+            MqlTradeRequest del_req;
+            MqlTradeResult del_res;
+            ZeroMemory(del_req);
+            ZeroMemory(del_res);
+            del_req.action = TRADE_ACTION_REMOVE;
+            del_req.order = order_ticket;
+            if(!OrderSend(del_req, del_res) || del_res.retcode != TRADE_RETCODE_DONE) {
+               all_actions_ok = false;
+               PrintFormat("[XAU-PILOT] Failed to delete pending order %I64u (retcode %u)", order_ticket, del_res.retcode);
+            }
+         }
+      } else {
+         all_actions_ok = false;
+         PrintFormat("[XAU-PILOT] Unsupported emergency policy: %s", policy);
       }
-      XauPilot_AcknowledgeCommand(cmd_id, "APPLIED");
+      XauPilot_AcknowledgeCommand(cmd_id, all_actions_ok ? "APPLIED" : "REJECTED", all_actions_ok ? "" : "One or more close/delete actions failed; inspect MT5 Journal");
    } else {
       XauPilot_AcknowledgeCommand(cmd_id, "REJECTED", "Unknown command type");
    }
@@ -367,57 +418,24 @@ void XauPilot_ReportTradeEvent(const MqlTradeTransaction &trans,
                               const MqlTradeRequest &request,
                               const MqlTradeResult &result)
 {
-   if(trans.type != TRADE_TRANSACTION_DEAL_ADD || !HistoryDealSelect(trans.deal)) return;
-   if(HistoryDealGetInteger(trans.deal, DEAL_MAGIC) != (long)g_xau_config.magic_number) return;
-   long entry = HistoryDealGetInteger(trans.deal, DEAL_ENTRY);
-   if(entry != DEAL_ENTRY_OUT && entry != DEAL_ENTRY_OUT_BY && entry != DEAL_ENTRY_INOUT) return;
-
-   long position_id = HistoryDealGetInteger(trans.deal, DEAL_POSITION_ID);
-   // Wait until the position is fully closed so partial exits are not double-counted.
-   for(int i = 0; i < PositionsTotal(); i++) {
-      ulong position_ticket = PositionGetTicket(i);
-      if(PositionGetInteger(POSITION_IDENTIFIER) == position_id) return;
-   }
-
-   if(!HistorySelectByPosition(position_id)) return;
-   double total_profit = 0.0, total_commission = 0.0, total_swap = 0.0;
-   double exit_volume = 0.0, weighted_exit_value = 0.0;
-   string direction = "BUY";
-   int deals = HistoryDealsTotal();
-   for(int i = 0; i < deals; i++) {
-      ulong deal = HistoryDealGetTicket(i);
-      if(deal == 0) continue;
-      total_profit += HistoryDealGetDouble(deal, DEAL_PROFIT);
-      total_commission += HistoryDealGetDouble(deal, DEAL_COMMISSION);
-      total_swap += HistoryDealGetDouble(deal, DEAL_SWAP);
-      long deal_entry = HistoryDealGetInteger(deal, DEAL_ENTRY);
-      long deal_type = HistoryDealGetInteger(deal, DEAL_TYPE);
-      if(deal_entry == DEAL_ENTRY_IN) direction = (deal_type == DEAL_TYPE_BUY ? "BUY" : "SELL");
-      if(deal_entry == DEAL_ENTRY_OUT || deal_entry == DEAL_ENTRY_OUT_BY || deal_entry == DEAL_ENTRY_INOUT) {
-         double vol = HistoryDealGetDouble(deal, DEAL_VOLUME);
-         exit_volume += vol;
-         weighted_exit_value += vol * HistoryDealGetDouble(deal, DEAL_PRICE);
+   if(trans.type == TRADE_TRANSACTION_DEAL_ADD) {
+      if(HistoryDealSelect(trans.deal)) {
+         long magic = HistoryDealGetInteger(trans.deal, DEAL_MAGIC);
+         if(magic == (long)g_xau_config.magic_number) {
+            string payload = StringFormat("{\"installation_id\":\"%s\",\"magic_number\":%I64u,\"ticket\":%I64u,\"deal_type\":\"%s\",\"volume\":%.2f,\"price\":%.2f,\"profit\":%.2f,\"comment\":\"%s\"}",
+                                          g_xau_config.installation_id,
+                                          magic,
+                                          trans.deal,
+                                          (HistoryDealGetInteger(trans.deal, DEAL_TYPE) == DEAL_TYPE_BUY ? "BUY" : "SELL"),
+                                          HistoryDealGetDouble(trans.deal, DEAL_VOLUME),
+                                          HistoryDealGetDouble(trans.deal, DEAL_PRICE),
+                                          HistoryDealGetDouble(trans.deal, DEAL_PROFIT),
+                                          HistoryDealGetString(trans.deal, DEAL_COMMENT));
+            string resp;
+            XauPilot_HttpPost("/ea/v1/trades/event", payload, resp);
+         }
       }
    }
-   double avg_exit_price = exit_volume > 0.0 ? weighted_exit_value / exit_volume : HistoryDealGetDouble(trans.deal, DEAL_PRICE);
-   string payload = StringFormat("{\"installation_id\":\"%s\",\"deal_ticket\":%I64u,\"position_id\":%I64d,\"symbol\":\"%s\",\"direction\":\"%s\",\"volume\":%.2f,\"close_price\":%.8f,\"profit\":%.2f,\"commission\":%.2f,\"swap\":%.2f,\"currency\":\"%s\",\"closed_at_epoch\":%I64d}",
-      g_xau_config.installation_id, trans.deal, position_id, HistoryDealGetString(trans.deal, DEAL_SYMBOL),
-      direction, exit_volume, avg_exit_price, total_profit, total_commission, total_swap,
-      AccountInfoString(ACCOUNT_CURRENCY), HistoryDealGetInteger(trans.deal, DEAL_TIME));
-   string resp;
-   XauPilot_HttpPost("/ea/v1/performance/trade", payload, resp);
-}
-
-//+------------------------------------------------------------------+
-//| Send a balance/equity sample for public track record analytics   |
-//+------------------------------------------------------------------+
-void XauPilot_SendPerformanceSnapshot()
-{
-   string payload = StringFormat("{\"installation_id\":\"%s\",\"balance\":%.2f,\"equity\":%.2f,\"currency\":\"%s\",\"captured_at_epoch\":%I64d}",
-      g_xau_config.installation_id, AccountInfoDouble(ACCOUNT_BALANCE), AccountInfoDouble(ACCOUNT_EQUITY),
-      AccountInfoString(ACCOUNT_CURRENCY), TimeCurrent());
-   string resp;
-   XauPilot_HttpPost("/ea/v1/performance/snapshot", payload, resp);
 }
 
 //+------------------------------------------------------------------+
