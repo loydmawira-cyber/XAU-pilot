@@ -21,6 +21,8 @@ import com.example.ui.ScreenDestination
 import com.example.ui.XauPilotViewModel
 import com.example.ui.components.EmergencyStopDialog
 import com.example.ui.screens.accounts.AccountsScreen
+import com.example.ui.screens.admin.AdminConsoleScreen
+import com.example.ui.screens.support.SupportScreen
 import com.example.ui.screens.home.HomeScreen
 import com.example.ui.screens.marketplace.MarketplaceScreen
 import com.example.ui.screens.positions.PositionsScreen
@@ -67,6 +69,7 @@ fun MainAppContent(viewModel: XauPilotViewModel) {
     val emergencyDialogVisible by viewModel.emergencyDialogVisible.collectAsState()
     val selectedEmergencyPolicy by viewModel.selectedEmergencyPolicy.collectAsState()
     val selectedAccountId by viewModel.selectedAccountId.collectAsState()
+    val signedInRole = authSession?.user?.role?.name.orEmpty()
 
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -101,26 +104,16 @@ fun MainAppContent(viewModel: XauPilotViewModel) {
         NavTabItem("Positions", Icons.Default.ShowChart, ScreenDestination.Positions, "nav_positions_tab"),
         NavTabItem("Profile", Icons.Default.Person, ScreenDestination.Profile, "nav_profile_tab")
     )
-    val navTabs = if (isGuestMode) allNavTabs.take(2) else allNavTabs
+    val roleTabs = if (authSession != null && (signedInRole == "SUPER_ADMINISTRATOR" || signedInRole == "ADMINISTRATOR")) allNavTabs + listOf(
+        NavTabItem("Support", Icons.Default.SupportAgent, ScreenDestination.Support, "nav_support_tab"),
+        NavTabItem("Admin", Icons.Default.AdminPanelSettings, ScreenDestination.AdminConsole, "nav_admin_tab")
+    ) else if (authSession != null) allNavTabs + NavTabItem("Support", Icons.Default.SupportAgent, ScreenDestination.Support, "nav_support_tab") else allNavTabs
+    val navTabs = if (isGuestMode) allNavTabs.take(2) else roleTabs
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         containerColor = CharcoalBackground,
         snackbarHost = { SnackbarHost(snackbarHostState) },
-        topBar = {
-            if (isGuestMode || authSession != null) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                    horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween,
-                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
-                ) {
-                    Text(if (isGuestMode) "GUEST MODE · READ ONLY" else "SIGNED IN", color = GoldLight, fontSize = 11.sp)
-                    TextButton(onClick = { if (isGuestMode) viewModel.leaveGuestMode() else viewModel.signOut() }) {
-                        Text(if (isGuestMode) "Sign in" else "Sign out", color = GoldLight)
-                    }
-                }
-            }
-        },
         bottomBar = {
             NavigationBar(
                 containerColor = CharcoalSurface,
@@ -140,6 +133,8 @@ fun MainAppContent(viewModel: XauPilotViewModel) {
                         is ScreenDestination.RiskManagement -> tab.destination == ScreenDestination.Accounts
                         is ScreenDestination.BridgeGuide -> tab.destination == ScreenDestination.Profile
                         is ScreenDestination.PublisherWorkspace -> tab.destination == ScreenDestination.Profile
+                        is ScreenDestination.AdminConsole -> tab.destination == ScreenDestination.AdminConsole
+                        is ScreenDestination.Support -> tab.destination == ScreenDestination.Support
                         else -> false
                     }
 
@@ -188,6 +183,8 @@ fun MainAppContent(viewModel: XauPilotViewModel) {
                 is ScreenDestination.Profile -> ProfileScreen(viewModel = viewModel)
                 is ScreenDestination.BridgeGuide -> BridgeGuideScreen(viewModel = viewModel)
                 is ScreenDestination.PublisherWorkspace -> PublisherWorkspaceScreen(viewModel = viewModel)
+                is ScreenDestination.AdminConsole -> AdminConsoleScreen(user = authSession?.user)
+                is ScreenDestination.Support -> SupportScreen()
                 else -> HomeScreen(viewModel = viewModel)
             }
         }
