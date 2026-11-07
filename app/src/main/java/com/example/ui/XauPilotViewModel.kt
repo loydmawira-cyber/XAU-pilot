@@ -35,6 +35,10 @@ class XauPilotViewModel(
     private val repository: XauPilotRepository = XauPilotRepository.getInstance()
 ) : ViewModel() {
 
+    init {
+        restoreAuthenticatedSession()
+    }
+
     private val _sessionRestoreComplete = MutableStateFlow(false)
     val sessionRestoreComplete: StateFlow<Boolean> = _sessionRestoreComplete.asStateFlow()
     private val _isGuestMode = MutableStateFlow(false)
@@ -122,7 +126,41 @@ class XauPilotViewModel(
             }
         }
     }
-        fun uploadAndPublishDraft(
+    val eaSubmissions = repository.eaSubmissions
+    private val _publisherBusy = MutableStateFlow(false)
+    val publisherBusy: StateFlow<Boolean> = _publisherBusy.asStateFlow()
+    private val _publisherResult = MutableStateFlow<String?>(null)
+    val publisherResult: StateFlow<String?> = _publisherResult.asStateFlow()
+    private val _publisherProductId = MutableStateFlow<String?>(null)
+    val publisherProductId: StateFlow<String?> = _publisherProductId.asStateFlow()
+    private val _publisherBridgeToken = MutableStateFlow<String?>(null)
+    val publisherBridgeToken: StateFlow<String?> = _publisherBridgeToken.asStateFlow()
+
+    fun connectPublisherPerformanceAccount(broker: String, server: String, accountNumber: String, environment: String, magicNumber: String) {
+        viewModelScope.launch {
+            _publisherBusy.value = true
+            _publisherResult.value = null
+            _publisherBridgeToken.value = null
+            try {
+                val productId = _publisherProductId.value ?: error("Upload your EA first to select the EA that will publish its performance.")
+                require(broker.isNotBlank() && server.isNotBlank() && accountNumber.length >= 3) { "Enter broker, server and MT5 account number." }
+                val magic = magicNumber.toLongOrNull()?.takeIf { it > 0 } ?: error("Magic number must be a positive integer.")
+                val response = ApiClient.apiService.connectPublisherPerformanceAccount(productId, mapOf(
+                    "label" to "Publisher MT5 account", "broker_name" to broker.trim(), "server_name" to server.trim(),
+                    "account_number" to accountNumber.trim(), "environment" to environment, "magic_number" to magic,
+                    "symbol" to "XAUUSD", "timeframe" to "M5"
+                ))
+                if (!response.isSuccessful) error("MT5 performance account setup failed: ${response.code()} ${response.errorBody()?.string().orEmpty()}")
+                val body = response.body() ?: error("Backend returned an empty response")
+                _publisherBridgeToken.value = body["ea_bridge_token"]?.toString()
+                _publisherResult.value = "MT5 owner account connected. Installation ID: ${body["installation_id"]}. Copy the bridge token below and configure your bridge-enabled EA in MT5. The token is shown once."
+            } catch (e: Exception) {
+                _publisherResult.value = e.message ?: "Could not connect the MT5 account."
+            } finally { _publisherBusy.value = false }
+        }
+    }
+
+    fun uploadAndPublishDraft(
         context: Context, fileUri: Uri, name: String, version: String, description: String,
         category: String, monthlyPrice: Double, manifestParametersJson: String
     ) {
@@ -198,7 +236,6 @@ class XauPilotViewModel(
             }
         }
     }
-
     val licenses = repository.licenses
     val installations = repository.installations
     val selectedInstallationId = repository.selectedInstallationId
@@ -238,13 +275,7 @@ class XauPilotViewModel(
             } finally { _publisherBusy.value = false }
         }
     }
-
     val backendSyncStatus = repository.backendSyncStatus
-
-    // Restore the session only after all StateFlows above have been initialized.
-    init {
-        restoreAuthenticatedSession()
-    }
 
     fun refreshBackend() {
         repository.syncFromBackend()
@@ -454,36 +485,3 @@ class XauPilotViewModel(
         _userMessage.value = "API endpoint updated"
     }
 }
- val eaSubmissions = repository.eaSubmissions
-    private val _publisherBusy = MutableStateFlow(false)
-    val publisherBusy: StateFlow<Boolean> = _publisherBusy.asStateFlow()
-    private val _publisherResult = MutableStateFlow<String?>(null)
-    val publisherResult: StateFlow<String?> = _publisherResult.asStateFlow()
-    private val _publisherProductId = MutableStateFlow<String?>(null)
-    val publisherProductId: StateFlow<String?> = _publisherProductId.asStateFlow()
-    private val _publisherBridgeToken = MutableStateFlow<String?>(null)
-    val publisherBridgeToken: StateFlow<String?> = _publisherBridgeToken.asStateFlow()
-
-    fun connectPublisherPerformanceAccount(broker: String, server: String, accountNumber: String, environment: String, magicNumber: String) {
-        viewModelScope.launch {
-            _publisherBusy.value = true
-            _publisherResult.value = null
-            _publisherBridgeToken.value = null
-            try {
-                val productId = _publisherProductId.value ?: error("Upload your EA first to select the EA that will publish its performance.")
-                require(broker.isNotBlank() && server.isNotBlank() && accountNumber.length >= 3) { "Enter broker, server and MT5 account number." }
-                val magic = magicNumber.toLongOrNull()?.takeIf { it > 0 } ?: error("Magic number must be a positive integer.")
-                val response = ApiClient.apiService.connectPublisherPerformanceAccount(productId, mapOf(
-                    "label" to "Publisher MT5 account", "broker_name" to broker.trim(), "server_name" to server.trim(),
-                    "account_number" to accountNumber.trim(), "environment" to environment, "magic_number" to magic,
-                    "symbol" to "XAUUSD", "timeframe" to "M5"
-                ))
-                if (!response.isSuccessful) error("MT5 performance account setup failed: ${response.code()} ${response.errorBody()?.string().orEmpty()}")
-                val body = response.body() ?: error("Backend returned an empty response")
-                _publisherBridgeToken.value = body["ea_bridge_token"]?.toString()
-                _publisherResult.value = "MT5 owner account connected. Installation ID: ${body["installation_id"]}. Copy the bridge token below and configure your bridge-enabled EA in MT5. The token is shown once."
-            } catch (e: Exception) {
-                _publisherResult.value = e.message ?: "Could not connect the MT5 account."
-            } finally { _publisherBusy.value = false }
-        }
-    }
