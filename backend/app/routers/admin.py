@@ -98,7 +98,12 @@ def update_administrator_status(user_id: str, body: AdminStatusUpdate,
 @router.get("/support/conversations")
 def list_support_conversations(current: User = Depends(get_current_user), db: Session = Depends(get_db)):
     q = db.query(SupportConversation)
-    if current.role not in ("ADMINISTRATOR", "SUPER_ADMINISTRATOR", "SUPPORT_AGENT"):
+    if current.role == "SUPER_ADMINISTRATOR":
+        pass
+    elif current.role in ("ADMINISTRATOR", "SUPPORT_AGENT"):
+        # Restricted support staff see only unassigned tickets and tickets assigned to them.
+        q = q.filter((SupportConversation.assigned_admin_id == None) | (SupportConversation.assigned_admin_id == current.id))
+    else:
         q = q.filter(SupportConversation.owner_user_id == current.id)
     rows = q.order_by(SupportConversation.updated_at.desc()).limit(200).all()
     result = []
@@ -134,6 +139,8 @@ def get_support_conversation(conversation_id: str, current: User = Depends(get_c
     is_admin = current.role in ("ADMINISTRATOR", "SUPER_ADMINISTRATOR", "SUPPORT_AGENT")
     if not is_admin and c.owner_user_id != current.id:
         raise HTTPException(status_code=404, detail="Support conversation not found")
+    if current.role in ("ADMINISTRATOR", "SUPPORT_AGENT") and c.assigned_admin_id not in (None, current.id):
+        raise HTTPException(status_code=404, detail="Support conversation not found")
     owner = db.query(User).filter(User.id == c.owner_user_id).first()
     messages = db.query(SupportMessage).filter(SupportMessage.conversation_id == c.id).order_by(SupportMessage.created_at.asc()).all()
     return {
@@ -156,7 +163,9 @@ def send_support_message(conversation_id: str, body: SupportMessageCreate,
         raise HTTPException(status_code=404, detail="Support conversation not found")
     if c.status == "CLOSED":
         raise HTTPException(status_code=409, detail="This support conversation is closed")
-    if is_admin and c.assigned_admin_id is None:
+    if current.role in ("ADMINISTRATOR", "SUPPORT_AGENT") and c.assigned_admin_id not in (None, current.id):
+        raise HTTPException(status_code=404, detail="Support conversation not found")
+    if current.role in ("ADMINISTRATOR", "SUPPORT_AGENT") and c.assigned_admin_id is None:
         c.assigned_admin_id = current.id
     msg = SupportMessage(conversation_id=c.id, sender_user_id=current.id, body=body.body.strip())
     c.updated_at = datetime.utcnow()
@@ -172,6 +181,8 @@ def set_support_status(conversation_id: str, body: SupportStatusUpdate,
                        current: User = Depends(admin_roles), db: Session = Depends(get_db)):
     c = db.query(SupportConversation).filter(SupportConversation.id == conversation_id).first()
     if not c:
+        raise HTTPException(status_code=404, detail="Support conversation not found")
+    if current.role == "ADMINISTRATOR" and c.assigned_admin_id not in (None, current.id):
         raise HTTPException(status_code=404, detail="Support conversation not found")
     c.status = body.status
     c.updated_at = datetime.utcnow()

@@ -22,6 +22,7 @@ import com.example.ui.XauPilotViewModel
 import com.example.ui.components.EmergencyStopDialog
 import com.example.ui.screens.accounts.AccountsScreen
 import com.example.ui.screens.admin.AdminConsoleScreen
+import com.example.ui.screens.admin.AdminSupportScreen
 import com.example.ui.screens.support.SupportScreen
 import com.example.ui.screens.home.HomeScreen
 import com.example.ui.screens.marketplace.MarketplaceScreen
@@ -97,18 +98,26 @@ fun MainAppContent(viewModel: XauPilotViewModel) {
         if (isGuestMode) viewModel.navigateTo(ScreenDestination.Home) else viewModel.navigateBack()
     }
 
-    val allNavTabs = listOf(
+    val primaryNavTabs = listOf(
         NavTabItem("Home", Icons.Default.Dashboard, ScreenDestination.Home, "nav_home_tab"),
         NavTabItem("Market", Icons.Default.Storefront, ScreenDestination.Marketplace, "nav_market_tab"),
         NavTabItem("Accounts", Icons.Default.AccountBalance, ScreenDestination.Accounts, "nav_accounts_tab"),
-        NavTabItem("Positions", Icons.Default.ShowChart, ScreenDestination.Positions, "nav_positions_tab"),
-        NavTabItem("Profile", Icons.Default.Person, ScreenDestination.Profile, "nav_profile_tab")
+        NavTabItem("Positions", Icons.Default.ShowChart, ScreenDestination.Positions, "nav_positions_tab")
     )
-    val roleTabs = if (authSession != null && (signedInRole == "SUPER_ADMINISTRATOR" || signedInRole == "ADMINISTRATOR")) allNavTabs + listOf(
-        NavTabItem("Support", Icons.Default.SupportAgent, ScreenDestination.Support, "nav_support_tab"),
-        NavTabItem("Admin", Icons.Default.AdminPanelSettings, ScreenDestination.AdminConsole, "nav_admin_tab")
-    ) else if (authSession != null) allNavTabs + NavTabItem("Support", Icons.Default.SupportAgent, ScreenDestination.Support, "nav_support_tab") else allNavTabs
-    val navTabs = if (isGuestMode) allNavTabs.take(2) else roleTabs
+    // Profile is intentionally the final tab for every signed-in role.
+    val roleTabs = if (authSession != null && (signedInRole == "SUPER_ADMINISTRATOR" || signedInRole == "ADMINISTRATOR")) {
+        primaryNavTabs + listOf(
+            NavTabItem("Admin", Icons.Default.AdminPanelSettings, ScreenDestination.AdminConsole, "nav_admin_tab"),
+            NavTabItem("Support", Icons.Default.SupportAgent, ScreenDestination.Support, "nav_support_tab"),
+            NavTabItem("Profile", Icons.Default.Person, ScreenDestination.Profile, "nav_profile_tab")
+        )
+    } else if (authSession != null) {
+        primaryNavTabs + listOf(
+            NavTabItem("Support", Icons.Default.SupportAgent, ScreenDestination.Support, "nav_support_tab"),
+            NavTabItem("Profile", Icons.Default.Person, ScreenDestination.Profile, "nav_profile_tab")
+        )
+    } else primaryNavTabs + NavTabItem("Profile", Icons.Default.Person, ScreenDestination.Profile, "nav_profile_tab")
+    val navTabs = if (isGuestMode) primaryNavTabs.take(2) else roleTabs
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -184,7 +193,7 @@ fun MainAppContent(viewModel: XauPilotViewModel) {
                 is ScreenDestination.BridgeGuide -> BridgeGuideScreen(viewModel = viewModel)
                 is ScreenDestination.PublisherWorkspace -> PublisherWorkspaceScreen(viewModel = viewModel)
                 is ScreenDestination.AdminConsole -> AdminConsoleScreen(user = authSession?.user)
-                is ScreenDestination.Support -> SupportScreen()
+                is ScreenDestination.Support -> if (signedInRole == "SUPER_ADMINISTRATOR" || signedInRole == "ADMINISTRATOR" || signedInRole == "SUPPORT_AGENT") AdminSupportScreen(user = authSession?.user) else SupportScreen()
                 else -> HomeScreen(viewModel = viewModel)
             }
         }
