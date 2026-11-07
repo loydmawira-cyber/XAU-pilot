@@ -21,6 +21,8 @@ interface ApiService {
     @POST("developer/ea-products/{productId}/versions/{versionId}/publish") suspend fun publishDeveloperEaVersion(@Path("productId") productId: String, @Path("versionId") versionId: String): Response<Map<String, Any?>>
     @GET("developer/ea-products/{productId}/versions/{versionId}/preview") suspend fun previewDeveloperEaSettings(@Path("productId") productId: String, @Path("versionId") versionId: String): Response<Map<String, Any?>>
     @GET("developer/ea-products/{productId}/versions/{versionId}/extraction") suspend fun getDeveloperEaExtraction(@Path("productId") productId: String, @Path("versionId") versionId: String): Response<Map<String, Any?>>
+    @POST("developer/ea-products/{productId}/versions/{versionId}/extraction/prepare-manifest") suspend fun prepareDeveloperEaReviewManifest(@Path("productId") productId: String, @Path("versionId") versionId: String): Response<Map<String, Any?>>
+    @PUT("developer/ea-products/{productId}/versions/{versionId}/review-manifest") suspend fun saveDeveloperEaReviewManifest(@Path("productId") productId: String, @Path("versionId") versionId: String, @Body body: Map<String, @JvmSuppressWildcards Any>): Response<Map<String, Any?>>
 
     // Authentication
     @POST("auth/login")
