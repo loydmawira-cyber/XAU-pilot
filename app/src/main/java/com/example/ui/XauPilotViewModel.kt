@@ -139,6 +139,63 @@ class XauPilotViewModel(
     private val _publisherVersionId = MutableStateFlow<String?>(null)
     private val _publisherExtraction = MutableStateFlow<Map<String, Any?>?>(null)
     val publisherExtraction: StateFlow<Map<String, Any?>?> = _publisherExtraction.asStateFlow()
+    private val _publisherReviewManifest = MutableStateFlow<Map<String, Any?>?>(null)
+    val publisherReviewManifest: StateFlow<Map<String, Any?>?> = _publisherReviewManifest.asStateFlow()
+
+    fun preparePublisherReviewDraft() {
+        val productId = _publisherProductId.value ?: return
+        val versionId = _publisherVersionId.value ?: return
+        viewModelScope.launch {
+            _publisherBusy.value = true
+            try {
+                val response = ApiClient.apiService.prepareDeveloperEaReviewManifest(productId, versionId)
+                if (!response.isSuccessful) error("Could not prepare review draft: ${response.code()} ${response.errorBody()?.string().orEmpty()}")
+                _publisherReviewManifest.value = response.body()
+                _publisherResult.value = "Review draft prepared. Every extracted input is hidden from customers until you choose its visibility."
+            } catch (e: Exception) {
+                _publisherResult.value = e.message ?: "Could not prepare review draft"
+            } finally { _publisherBusy.value = false }
+        }
+    }
+
+    fun updatePublisherReviewParameter(index: Int, field: String, value: Any) {
+        val current = _publisherReviewManifest.value ?: return
+        val oldParams = current["parameters"] as? List<*> ?: return
+        if (index !in oldParams.indices) return
+        val params = oldParams.mapIndexed { i, raw ->
+            val map = (raw as? Map<*, *>)?.entries?.associate { it.key.toString() to it.value }?.toMutableMap()
+                ?: mutableMapOf()
+            if (i == index) map[field] = value
+            map
+        }
+        _publisherReviewManifest.value = current + ("parameters" to params)
+    }
+
+    fun savePublisherReviewDraft() {
+        val productId = _publisherProductId.value ?: return
+        val versionId = _publisherVersionId.value ?: return
+        val userId = authSession.value?.user?.id ?: run {
+            _publisherResult.value = "Sign in again before saving input settings."
+            return
+        }
+        val current = _publisherReviewManifest.value ?: return
+        val params = current["parameters"] as? List<*> ?: emptyList<Any>()
+        val manifest = mapOf<String, Any>(
+            "schema_version" to "1.0", "ea_product_id" to productId,
+            "ea_version" to "1.0.0", "developer_id" to userId,
+            "parameters" to params
+        )
+        viewModelScope.launch {
+            _publisherBusy.value = true
+            try {
+                val response = ApiClient.apiService.saveDeveloperEaReviewManifest(productId, versionId, manifest)
+                if (!response.isSuccessful) error("Could not save input review: ${response.code()} ${response.errorBody()?.string().orEmpty()}")
+                _publisherResult.value = "Developer input review saved. Publishing remains blocked until all security and release checks pass."
+            } catch (e: Exception) {
+                _publisherResult.value = e.message ?: "Could not save input review"
+            } finally { _publisherBusy.value = false }
+        }
+    }
 
     fun refreshPublisherExtraction() {
         val productId = _publisherProductId.value ?: return
