@@ -22,6 +22,7 @@ import com.example.ui.XauPilotViewModel
 import com.example.ui.components.EmergencyStopDialog
 import com.example.ui.screens.accounts.AccountsScreen
 import com.example.ui.screens.admin.AdminConsoleScreen
+import com.example.ui.screens.admin.AdminSupportScreen
 import com.example.ui.screens.support.SupportScreen
 import com.example.ui.screens.home.HomeScreen
 import com.example.ui.screens.marketplace.MarketplaceScreen
@@ -184,7 +185,7 @@ fun MainAppContent(viewModel: XauPilotViewModel) {
                 is ScreenDestination.BridgeGuide -> BridgeGuideScreen(viewModel = viewModel)
                 is ScreenDestination.PublisherWorkspace -> PublisherWorkspaceScreen(viewModel = viewModel)
                 is ScreenDestination.AdminConsole -> AdminConsoleScreen(user = authSession?.user)
-                is ScreenDestination.Support -> SupportScreen()
+                is ScreenDestination.Support -> if (signedInRole == "SUPER_ADMINISTRATOR" || signedInRole == "ADMINISTRATOR") AdminSupportScreen(user = authSession?.user) else SupportScreen()
                 else -> HomeScreen(viewModel = viewModel)
             }
         }
