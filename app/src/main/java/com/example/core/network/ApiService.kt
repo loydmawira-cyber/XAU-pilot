@@ -154,4 +154,33 @@ interface ApiService {
 
     @GET("accounts/{id}/trades")
     suspend fun getTradesHistory(@Path("id") accountId: String): Response<List<ClosedTrade>>
+
+
+    // Admin and support API methods
+@GET("admin/ea-review/pending") suspend fun getPendingEaReviews(): Response<List<Map<String, Any?>>>
+
+@POST("admin/ea-review/{productId}/approve") suspend fun approveEaReview(@Path("productId") productId: String): Response<Map<String, Any?>>
+
+@POST("admin/ea-review/{productId}/reject") suspend fun rejectEaReview(@Path("productId") productId: String, @Body body: Map<String, String>): Response<Map<String, Any?>>
+
+@POST("auth/admin-users") suspend fun createRestrictedAdmin(@Body body: Map<String, String>): Response<Map<String, Any?>>
+
+@GET("admin/users") suspend fun getPlatformUsers(): Response<List<Map<String, Any?>>>
+
+@GET("admin/administrators") suspend fun getAdministrators(): Response<List<Map<String, Any?>>>
+
+@PATCH("admin/administrators/{userId}/status") suspend fun setAdministratorStatus(@Path("userId") userId: String, @Body body: Map<String, Boolean>): Response<Map<String, Any?>>
+
+@GET("support/conversations") suspend fun getSupportConversations(): Response<List<Map<String, Any?>>>
+
+@POST("support/conversations") suspend fun createSupportConversation(@Body body: Map<String, String>): Response<Map<String, Any?>>
+
+@GET("support/conversations/{conversationId}") suspend fun getSupportConversation(@Path("conversationId") conversationId: String): Response<Map<String, Any?>>
+
+@POST("support/conversations/{conversationId}/messages") suspend fun sendSupportMessage(@Path("conversationId") conversationId: String, @Body body: Map<String, String>): Response<Map<String, Any?>>
+
+@PATCH("support/conversations/{conversationId}/status") suspend fun setSupportStatus(@Path("conversationId") conversationId: String, @Body body: Map<String, String>): Response<Map<String, Any?>>
+
+
+    // Developer EA management endpoints.
 }
