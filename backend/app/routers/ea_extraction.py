@@ -296,7 +296,9 @@ def save_reviewed_manifest(product_id: str, version_id: str, manifest: Dict[str,
     supplied_parameters = manifest.get("parameters") if isinstance(manifest, dict) else None
     if not isinstance(supplied_parameters, list):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, {"manifest_errors": ["parameters must be a list"]})
-    supplied_by_key = {p.get("key"): p for p in supplied_parameters if isinstance(p, dict)}
+    if any(not isinstance(p, dict) or not isinstance(p.get("key"), str) for p in supplied_parameters):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, {"manifest_errors": ["Each parameter must have a string key"]})
+    supplied_by_key = {p.get("key"): p for p in supplied_parameters}
     if len(supplied_by_key) != len(supplied_parameters) or set(supplied_by_key) != set(expected):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
                             {"manifest_errors": ["Reviewed parameters must match the supported inputs extracted from this exact EX5"]})
