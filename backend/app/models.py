@@ -174,6 +174,7 @@ class EaInstallation(Base):
     vps_instance_id = Column(String(36), nullable=True)
     open_positions_count = Column(Integer, nullable=False, default=0)
     total_profit_loss_usd = Column(Float, nullable=False, default=0.0)
+    is_publisher_account = Column(Boolean, nullable=False, default=False)
     last_heartbeat = Column(DateTime, nullable=True)
     created_at = Column(DateTime, nullable=False, default=utc_now)
 
@@ -291,6 +292,42 @@ class ClosedTrade(Base):
     close_time = Column(DateTime, nullable=False, default=utc_now)
 
     broker_account = relationship("BrokerAccount", back_populates="closed_trades")
+
+
+class EaPerformanceTrade(Base):
+    """Closed EA deals reported by the publisher's connected MT5 terminal."""
+    __tablename__ = "ea_performance_trades"
+    __table_args__ = (Index("uq_ea_perf_deal_installation", "installation_id", "deal_ticket", unique=True),)
+
+    id = Column(String(36), primary_key=True, default=gen_uuid)
+    installation_id = Column(String(36), ForeignKey("ea_installations.id", ondelete="CASCADE"), nullable=False, index=True)
+    deal_ticket = Column(BigInteger, nullable=False)
+    position_id = Column(BigInteger, nullable=False, default=0)
+    symbol = Column(String(30), nullable=False, default="XAUUSD")
+    direction = Column(String(10), nullable=False)
+    volume = Column(Float, nullable=False)
+    close_price = Column(Float, nullable=False)
+    profit = Column(Float, nullable=False, default=0.0)
+    commission = Column(Float, nullable=False, default=0.0)
+    swap = Column(Float, nullable=False, default=0.0)
+    net_profit = Column(Float, nullable=False, default=0.0)
+    currency = Column(String(10), nullable=False, default="USD")
+    closed_at = Column(DateTime, nullable=False, index=True)
+    created_at = Column(DateTime, nullable=False, default=utc_now)
+
+
+class EaPerformanceSnapshot(Base):
+    """Periodic balance/equity samples used for a public equity curve and drawdown."""
+    __tablename__ = "ea_performance_snapshots"
+    __table_args__ = (Index("ix_ea_perf_snapshot_install_time", "installation_id", "captured_at"),)
+
+    id = Column(String(36), primary_key=True, default=gen_uuid)
+    installation_id = Column(String(36), ForeignKey("ea_installations.id", ondelete="CASCADE"), nullable=False, index=True)
+    balance = Column(Float, nullable=False)
+    equity = Column(Float, nullable=False)
+    currency = Column(String(10), nullable=False, default="USD")
+    captured_at = Column(DateTime, nullable=False, index=True)
+
 
 class VpsInstance(Base):
     __tablename__ = "vps_instances"

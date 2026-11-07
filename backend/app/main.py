@@ -13,7 +13,7 @@ from backend.app.database import engine, Base
 from backend.app.routers import (
     auth, broker_accounts, ea_marketplace,
     ea_installations, ea_bridge, vps_telemetry, hosting,
-    developer, ea_review, ea_packages
+    developer, ea_review, ea_packages, ea_performance
 )
 
 # Initialize database schema tables if not present
@@ -49,6 +49,7 @@ app.include_router(hosting.router, prefix=settings.API_V1_STR)
 app.include_router(developer.router, prefix=settings.API_V1_STR)
 app.include_router(ea_review.router, prefix=settings.API_V1_STR)
 app.include_router(ea_packages.router, prefix=settings.API_V1_STR)
+app.include_router(ea_performance.router)
 app.include_router(ea_bridge.router, prefix=settings.EA_V1_STR)
 
 @app.get("/health")
