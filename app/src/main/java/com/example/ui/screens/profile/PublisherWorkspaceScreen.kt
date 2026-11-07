@@ -28,6 +28,7 @@ fun PublisherWorkspaceScreen(viewModel: XauPilotViewModel, modifier: Modifier = 
     val context = LocalContext.current
     val busy by viewModel.publisherBusy.collectAsState()
     val result by viewModel.publisherResult.collectAsState()
+    val extraction by viewModel.publisherExtraction.collectAsState()
     val createdProductId by viewModel.publisherProductId.collectAsState()
     val bridgeToken by viewModel.publisherBridgeToken.collectAsState()
     val session by viewModel.authSession.collectAsState()
@@ -108,6 +109,28 @@ fun PublisherWorkspaceScreen(viewModel: XauPilotViewModel, modifier: Modifier = 
                         else Text("Upload EA", color = CharcoalBackground, fontWeight = FontWeight.Bold)
                     }
                     result?.let { Text(it, color = if (it.startsWith("EX5 uploaded")) TradingGreen else TradingAmber, fontSize = 12.sp) }
+                    extraction?.let { job ->
+                        Spacer(Modifier.height(4.dp))
+                        Text("AUTOMATIC MT5 INPUT DISCOVERY", color = GoldLight, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text("Status: ${job["status"]?.toString() ?: "Unknown"}", color = if (job["status"] == "COMPLETE") TradingGreen else TradingAmber, fontWeight = FontWeight.SemiBold)
+                        when (job["status"]?.toString()) {
+                            "QUEUED" -> Text("Your EX5 is waiting for the secure scanner and isolated MT5 extraction worker.", color = TextSecondaryDark, fontSize = 12.sp)
+                            "RUNNING" -> Text("The isolated MT5 worker is inspecting the uploaded EA. Refresh to check progress.", color = TextSecondaryDark, fontSize = 12.sp)
+                            "COMPLETE" -> {
+                                val inputs = job["inputs"] as? List<*>
+                                Text("Extracted inputs: ${inputs?.size ?: 0}. These are not customer-visible until you review and approve them.", color = TextSecondaryDark, fontSize = 12.sp)
+                                inputs.orEmpty().forEach { raw ->
+                                    val item = raw as? Map<*, *> ?: return@forEach
+                                    Text("• ${item["display_name"] ?: item["key"]} — ${item["type"] ?: "unknown"} (default: ${item["default"] ?: "not reported"})", color = TextPrimaryDark, fontSize = 11.sp)
+                                }
+                            }
+                            "FAILED" -> Text("Extraction failed (${job["error_code"] ?: "unknown error"}). Upload a corrected build or contact support.", color = TradingAmber, fontSize = 12.sp)
+                            else -> Text("Extraction has not been queued yet.", color = TextSecondaryDark, fontSize = 12.sp)
+                        }
+                        OutlinedButton(onClick = { viewModel.refreshPublisherExtraction() }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+                            Text("Refresh extraction status")
+                        }
+                    }
                 }
             }
         }
