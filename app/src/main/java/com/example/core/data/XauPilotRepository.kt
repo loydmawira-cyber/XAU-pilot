@@ -30,6 +30,7 @@ class XauPilotRepository private constructor(context: Context? = null) {
     val authSession: StateFlow<AuthSession?> = _authSession.asStateFlow()
 
     fun acceptAuthenticatedSession(session: AuthSession) { _authSession.value = session }
+    fun clearAuthenticatedSession() { _authSession.value = null }
 
     // Accounts
     private val _accounts = MutableStateFlow<List<BrokerAccount>>(emptyList())
