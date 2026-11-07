@@ -29,6 +29,7 @@ fun PublisherWorkspaceScreen(viewModel: XauPilotViewModel, modifier: Modifier = 
     val busy by viewModel.publisherBusy.collectAsState()
     val result by viewModel.publisherResult.collectAsState()
     val extraction by viewModel.publisherExtraction.collectAsState()
+    val reviewManifest by viewModel.publisherReviewManifest.collectAsState()
     val createdProductId by viewModel.publisherProductId.collectAsState()
     val bridgeToken by viewModel.publisherBridgeToken.collectAsState()
     val session by viewModel.authSession.collectAsState()
@@ -129,6 +130,59 @@ fun PublisherWorkspaceScreen(viewModel: XauPilotViewModel, modifier: Modifier = 
                         }
                         OutlinedButton(onClick = { viewModel.refreshPublisherExtraction() }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
                             Text("Refresh extraction status")
+                        }
+                        if (job["status"] == "COMPLETE" && reviewManifest == null) {
+                            Button(onClick = { viewModel.preparePublisherReviewDraft() }, enabled = !busy,
+                                modifier = Modifier.fillMaxWidth()) {
+                                Text("Prepare developer input review")
+                            }
+                        }
+                        reviewManifest?.let { review ->
+                            Spacer(Modifier.height(6.dp))
+                            Text("DEVELOPER INPUT APPROVAL", color = GoldLight, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text("Every input starts hidden and non-editable. Choose what customers may see and edit. Do not enable a setting unless you understand its effect.", color = TextSecondaryDark, fontSize = 12.sp)
+                            val reviewInputs = review["parameters"] as? List<*>
+                            reviewInputs.orEmpty().forEachIndexed { index, raw ->
+                                val parameter = raw as? Map<*, *> ?: return@forEachIndexed
+                                Card(colors = CardDefaults.cardColors(containerColor = CharcoalBackground),
+                                    border = BorderStroke(1.dp, GoldPrimary.copy(alpha = .25f))) {
+                                    Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        Text(parameter["label"]?.toString() ?: parameter["key"]?.toString().orEmpty(),
+                                            color = TextPrimaryDark, fontWeight = FontWeight.SemiBold)
+                                        Text("Type: ${parameter["type"]} · Extracted default: ${parameter["default"]}",
+                                            color = TextSecondaryDark, fontSize = 11.sp)
+                                        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                                            Checkbox(
+                                                checked = parameter["visible_to_customer"] == true,
+                                                onCheckedChange = { viewModel.updatePublisherReviewParameter(index, "visible_to_customer", it) }
+                                            )
+                                            Text("Visible to customers", color = TextPrimaryDark, fontSize = 12.sp)
+                                        }
+                                        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                                            Checkbox(
+                                                checked = parameter["customer_editable"] == true,
+                                                enabled = parameter["visible_to_customer"] == true,
+                                                onCheckedChange = { viewModel.updatePublisherReviewParameter(index, "customer_editable", it) }
+                                            )
+                                            Text("Customers may edit", color = TextPrimaryDark, fontSize = 12.sp)
+                                        }
+                                        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                                            Checkbox(
+                                                checked = parameter["requires_restart"] == true,
+                                                onCheckedChange = { viewModel.updatePublisherReviewParameter(index, "requires_restart", it) }
+                                            )
+                                            Text("Requires EA restart after change", color = TextPrimaryDark, fontSize = 12.sp)
+                                        }
+                                    }
+                                }
+                            }
+                            if (reviewInputs.isNullOrEmpty()) {
+                                Text("No supported inputs were extracted. Unresolved inputs must be inspected before this EA can be published.", color = TradingAmber, fontSize = 12.sp)
+                            }
+                            Button(onClick = { viewModel.savePublisherReviewDraft() }, enabled = !busy && !reviewInputs.isNullOrEmpty(),
+                                modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = GoldPrimary)) {
+                                Text("Save developer input choices", color = CharcoalBackground, fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
                 }
