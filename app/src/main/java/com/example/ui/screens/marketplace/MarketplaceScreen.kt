@@ -33,6 +33,8 @@ fun MarketplaceScreen(
     val eaProducts by viewModel.eaProducts.collectAsState()
     val licenses by viewModel.licenses.collectAsState()
     val isGuestMode by viewModel.isGuestMode.collectAsState()
+    val performanceByProduct by viewModel.eaPerformance.collectAsState()
+    val performanceLoading by viewModel.eaPerformanceLoading.collectAsState()
 
     var searchQuery by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf<StrategyCategory?>(null) }
@@ -305,6 +307,9 @@ fun MarketplaceScreen(
     }
 
     // Product Details Dialog
+    LaunchedEffect(selectedProductForDetail?.id) {
+        selectedProductForDetail?.id?.let(viewModel::loadPublicEaPerformance)
+    }
     if (selectedProductForDetail != null) {
         val ea = selectedProductForDetail!!
         AlertDialog(
@@ -325,27 +330,54 @@ fun MarketplaceScreen(
                     Text(ea.description, fontSize = 13.sp, color = TextPrimaryDark)
                     Spacer(modifier = Modifier.height(14.dp))
 
-                    // Public performance panel: never invent figures. Verified statistics
-                    // appear here only after the owner's MT5 account has supplied data.
-                    Surface(
-                        color = CharcoalSurfaceVariant,
-                        shape = RoundedCornerShape(10.dp),
-                        border = BorderStroke(1.dp, CharcoalCardBorder),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp)) {
-                            Text("OWNER MT5 PERFORMANCE", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = GoldLight)
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Text("Verified track record not available yet", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = TextPrimaryDark)
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                "Profitability, equity curve, win rate and drawdown will be shown here after the EA owner connects the account running this EA and XAU Pilot verifies its MT5 trading history. No sample or estimated figures are displayed.",
-                                fontSize = 11.sp,
-                                lineHeight = 16.sp,
-                                color = TextSecondaryDark
-                            )
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Text("Source required: EA owner's connected MT5 account • Live/demo status and reporting period will be identified", fontSize = 10.sp, color = GoldLight)
+                    // Live public performance is fetched from the connected owner MT5 account.
+                    val performance = performanceByProduct[ea.id]
+                    Text("OWNER MT5 PERFORMANCE", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = GoldLight)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    if (ea.id in performanceLoading && performance == null) {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = GoldPrimary)
+                    } else if (performance == null) {
+                        Text("Loading actual MT5 results…", fontSize = 11.sp, color = TextSecondaryDark)
+                    } else {
+                        val dataStatus = performance["data_status"]?.toString().orEmpty()
+                        val statusMessage = performance["message"]?.toString()
+                        Surface(color = CharcoalSurfaceVariant, shape = RoundedCornerShape(10.dp), border = BorderStroke(1.dp, CharcoalCardBorder), modifier = Modifier.fillMaxWidth()) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Text(dataStatus.replace('_', ' '), fontWeight = FontWeight.Bold, fontSize = 11.sp, color = GoldLight)
+                                if (!statusMessage.isNullOrBlank()) Text(statusMessage, fontSize = 11.sp, color = TextSecondaryDark)
+                                val stats = listOf(
+                                    "Net profit" to performance["net_profit"]?.let { "$it ${performance["currency"] ?: ""}".trim() },
+                                    "Net profit / starting balance" to (performance["net_profit_pct_of_initial_balance"] as? Number)?.let { "${it.toDouble()}%" },
+                                    "Gross profit" to performance["gross_profit"]?.let { "$it ${performance["currency"] ?: ""}".trim() },
+                                    "Gross loss" to performance["gross_loss"]?.let { "$it ${performance["currency"] ?: ""}".trim() },
+                                    "Profit factor" to performance["profit_factor"],
+                                    "Win rate" to (performance["win_rate_pct"] as? Number)?.let { "${it.toDouble()}%" },
+                                    "Max drawdown" to (performance["max_equity_drawdown_pct"] as? Number)?.let { "${it.toDouble()}%" },
+                                    "Closed trades" to performance["closed_trades"],
+                                    "Track record" to (performance["track_record_days"] as? Number)?.let { "${it.toInt()} days" }
+                                ).filter { it.second != null }
+                                stats.forEach { (label, value) ->
+                                    Row(modifier = Modifier.fillMaxWidth().padding(top = 5.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                                        Text(label, fontSize = 11.sp, color = TextSecondaryDark)
+                                        Text(value.toString(), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = TextPrimaryDark)
+                                    }
+                                }
+                                val curve = performance["equity_curve"] as? List<*>
+                                if (!curve.isNullOrEmpty()) {
+                                    Text("Recent equity snapshots", fontWeight = FontWeight.SemiBold, fontSize = 11.sp, color = GoldLight, modifier = Modifier.padding(top = 8.dp))
+                                    curve.takeLast(5).forEach { point ->
+                                        val sample = point as? Map<*, *>
+                                        val equity = (sample?.get("equity") as? Number)?.toDouble()
+                                        val balance = (sample?.get("balance") as? Number)?.toDouble()
+                                        if (equity != null && balance != null) Text("Balance ${"%.2f".format(balance)} · Equity ${"%.2f".format(equity)} ${performance["currency"] ?: ""}", fontSize = 10.sp, color = TextSecondaryDark)
+                                    }
+                                }
+                                val source = performance["source_label"]?.toString()
+                                if (!source.isNullOrBlank()) Text(source, fontSize = 10.sp, color = TextSecondaryDark, modifier = Modifier.padding(top = 8.dp))
+                                val scopeWarning = performance["account_scope_warning"]?.toString()
+                                if (!scopeWarning.isNullOrBlank()) Text(scopeWarning, fontSize = 10.sp, color = TradingAmber, modifier = Modifier.padding(top = 6.dp))
+                                Text("EA-reported MT5 results; not an independently audited broker statement. Past performance does not predict future results.", fontSize = 10.sp, color = TradingAmber, modifier = Modifier.padding(top = 6.dp))
+                            }
                         }
                     }
                     Spacer(modifier = Modifier.height(12.dp))
