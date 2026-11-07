@@ -295,8 +295,14 @@ def upload_binary(product_id: str, version_id: str, file: UploadFile = File(...)
         version_id=version.id, storage_key=stored.storage_key,
         original_filename=(file.filename or "")[:200], sha256=stored.sha256,
         size_bytes=stored.size_bytes, scan_status=scan_status, uploaded_by=user.id))
+    # A replacement binary invalidates every previous extraction and input schema.
+    # Never allow settings extracted from an older EX5 to be published with a new binary.
+    old_manifest = db.query(EaInputManifest).filter(EaInputManifest.version_id == version.id).first()
+    if old_manifest:
+        db.delete(old_manifest)
+        db.flush()
     # Queue MT5 inspection automatically; the separate Windows worker claims this job.
-    # Re-uploading replaces the prior draft binary and its prior extraction result.
+    # Re-uploading replaces the prior draft binary, extraction result, and reviewed schema.
     existing_job = db.query(EaExtractionJob).filter(EaExtractionJob.version_id == version.id).first()
     if existing_job:
         db.delete(existing_job)
