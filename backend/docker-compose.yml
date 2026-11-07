@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: xau_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: xau_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in backend/.env}
+      POSTGRES_DB: xau_pilot_db
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./alembic/versions:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U xau_user -d xau_pilot_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+    container_name: xau_backend
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in backend/.env}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in backend/.env}
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      MANIFEST_SIGNING_KEY: ${MANIFEST_SIGNING_KEY:?Set MANIFEST_SIGNING_KEY in backend/.env}
+      EA_STORAGE_DIR: /var/ea_packages
+      EA_MAX_BINARY_BYTES: ${EA_MAX_BINARY_BYTES:-26214400}
+      EA_SCAN_COMMAND: ${EA_SCAN_COMMAND:-}
+      HOSTING_PROVIDER: ${HOSTING_PROVIDER:-aws_ec2}
+      HOSTING_DRY_RUN: ${HOSTING_DRY_RUN:-true}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_AMI_ID: ${AWS_AMI_ID:-}
+      AWS_INSTANCE_TYPE: ${AWS_INSTANCE_TYPE:-t3.medium}
+      AWS_SUBNET_ID: ${AWS_SUBNET_ID:-}
+      AWS_SECURITY_GROUP_ID: ${AWS_SECURITY_GROUP_ID:-}
+      AWS_IAM_INSTANCE_PROFILE: ${AWS_IAM_INSTANCE_PROFILE:-}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://app.xaupilot.com}
+    volumes:
+      - ea_packages:/var/ea_packages
+    ports:
+      - "8000:8000"
+
+volumes:
+  postgres_data:
+  ea_packages:

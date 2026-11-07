@@ -1,0 +1,410 @@
+package com.example.ui
+
+import androidx.lifecycle.ViewModel
+import android.content.Context
+import android.net.Uri
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MultipartBody
+import okhttp3.RequestBody.Companion.toRequestBody
+import com.example.core.network.ApiClient
+import androidx.lifecycle.viewModelScope
+import com.example.core.data.XauPilotRepository
+import com.example.core.model.*
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.util.Locale
+import java.io.ByteArrayOutputStream
+
+sealed class ScreenDestination {
+    object Home : ScreenDestination()
+    object Marketplace : ScreenDestination()
+    data class EaDetail(val eaId: String) : ScreenDestination()
+    object Accounts : ScreenDestination()
+    object Positions : ScreenDestination()
+    data class EaSettings(val installationId: String) : ScreenDestination()
+    object VpsManagement : ScreenDestination()
+    object RiskManagement : ScreenDestination()
+    object Profile : ScreenDestination()
+    object BridgeGuide : ScreenDestination()
+    object PublisherWorkspace : ScreenDestination()
+}
+
+class XauPilotViewModel(
+    private val repository: XauPilotRepository = XauPilotRepository.getInstance()
+) : ViewModel() {
+
+    init {
+        restoreAuthenticatedSession()
+    }
+
+    private fun restoreAuthenticatedSession() {
+        viewModelScope.launch {
+            val access = ApiClient.getAuthToken() ?: return@launch
+            val refresh = ApiClient.getRefreshToken()
+            try {
+                var userResponse = ApiClient.apiService.getCurrentUser()
+                var activeAccess = access
+                if (!userResponse.isSuccessful && !refresh.isNullOrBlank()) {
+                    val refreshed = ApiClient.apiService.refreshSession(mapOf("refresh_token" to refresh))
+                    if (refreshed.isSuccessful && refreshed.body() != null) {
+                        activeAccess = refreshed.body()!!.accessToken
+                        ApiClient.setAuthToken(activeAccess)
+                        ApiClient.setRefreshToken(refreshed.body()!!.refreshToken)
+                        userResponse = ApiClient.apiService.getCurrentUser()
+                    }
+                }
+                if (userResponse.isSuccessful && userResponse.body() != null) {
+                    val currentRefresh = ApiClient.getRefreshToken().orEmpty()
+                    repository.acceptAuthenticatedSession(AuthSession(activeAccess, currentRefresh, user = userResponse.body()!!))
+                } else {
+                    ApiClient.clearSession()
+                }
+            } catch (_: Exception) {
+                // Keep credentials only when the backend is temporarily unreachable; do not fabricate a session.
+            }
+        }
+    }
+
+    // Current navigation state
+    private val _currentScreen = MutableStateFlow<ScreenDestination>(ScreenDestination.Home)
+    val currentScreen: StateFlow<ScreenDestination> = _currentScreen.asStateFlow()
+
+    // Backstack for custom navigation
+    private val screenBackStack = mutableListOf<ScreenDestination>()
+
+    // Exposed Flows from Repository
+    val accounts = repository.accounts
+    val selectedAccountId = repository.selectedAccountId
+    val eaProducts = repository.eaProducts
+    val eaSubmissions = repository.eaSubmissions
+    private val _publisherBusy = MutableStateFlow(false)
+    val publisherBusy: StateFlow<Boolean> = _publisherBusy.asStateFlow()
+    private val _publisherResult = MutableStateFlow<String?>(null)
+    val publisherResult: StateFlow<String?> = _publisherResult.asStateFlow()
+
+    fun uploadAndPublishDraft(
+        context: Context, fileUri: Uri, name: String, version: String, description: String,
+        category: String, monthlyPrice: Double, manifestParametersJson: String
+    ) {
+        viewModelScope.launch {
+            _publisherBusy.value = true
+            _publisherResult.value = null
+            try {
+                val user = authSession.value?.user ?: error("Please sign in before uploading an EA")
+                require(manifestParametersJson.trim().startsWith("[") && manifestParametersJson.trim().endsWith("]")) {
+                    "EA input manifest must be a valid JSON array. Use [] when there are no customer inputs."
+                }
+                org.json.JSONArray(manifestParametersJson)
+                val api = ApiClient.apiService
+                val developer = api.registerDeveloper(mapOf("display_name" to user.fullName, "contact_email" to user.email))
+                if (!developer.isSuccessful && developer.code() != 409) {
+                    error("Developer registration failed: ${developer.code()} ${developer.errorBody()?.string().orEmpty()}")
+                }
+                val code = (name.lowercase(Locale.US).replace(Regex("[^a-z0-9]+"), "-").trim('-')
+                    .ifBlank { "ea-package" }.take(28) + "-" + java.util.UUID.randomUUID().toString().take(8))
+                val productResponse = api.createDeveloperEaProduct(mapOf(
+                    "product_code" to code, "name" to name, "description" to description,
+                    "strategy_category" to category, "risk_disclosures" to "Automated trading involves substantial risk. Test on a demo account before live use.",
+                    "monthly_price_usd" to monthlyPrice, "annual_price_usd" to (monthlyPrice * 10),
+                    "lifetime_price_usd" to (monthlyPrice * 24), "min_deposit_usd" to 0
+                ))
+                if (!productResponse.isSuccessful) error("Product creation failed: ${productResponse.code()} ${productResponse.errorBody()?.string().orEmpty()}")
+                val productId = productResponse.body()?.get("id")?.toString() ?: error("Backend did not return product ID")
+                val versionResponse = api.createDeveloperEaVersion(productId, mapOf("version" to version, "release_notes" to "Initial release"))
+                if (!versionResponse.isSuccessful) error("Version creation failed: ${versionResponse.code()} ${versionResponse.errorBody()?.string().orEmpty()}")
+                val versionId = versionResponse.body()?.get("id")?.toString() ?: error("Backend did not return version ID")
+                val fileName = context.contentResolver.query(fileUri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+                    if (c.moveToFirst()) c.getString(0) else null
+                } ?: "ea.ex5"
+                require(fileName.lowercase(Locale.US).endsWith(".ex5")) { "Please select a compiled .ex5 EA file" }
+                val bytes = withContext(Dispatchers.IO) {
+                    context.contentResolver.openInputStream(fileUri)?.use { input ->
+                        val output = ByteArrayOutputStream()
+                        val buffer = ByteArray(64 * 1024)
+                        var total = 0
+                        while (true) {
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            total += count
+                            require(total <= 25 * 1024 * 1024) { "EA file exceeds the 25 MB upload limit" }
+                            output.write(buffer, 0, count)
+                        }
+                        output.toByteArray()
+                    }
+                } ?: error("Could not read the selected EA file")
+                require(bytes.isNotEmpty()) { "EA file is empty" }
+                val binaryPart = MultipartBody.Part.createFormData("file", fileName, bytes.toRequestBody("application/octet-stream".toMediaType()))
+                val binaryResponse = api.uploadDeveloperEaBinary(productId, versionId, binaryPart)
+                if (!binaryResponse.isSuccessful) error("EA upload failed: ${binaryResponse.code()} ${binaryResponse.errorBody()?.string().orEmpty()}")
+                val manifest = """{"schema_version":"1.0","ea_product_id":"$productId","ea_version":"$version","developer_id":"${user.id}","parameters":$manifestParametersJson}"""
+                val manifestPart = MultipartBody.Part.createFormData("file", "manifest.json", manifest.toRequestBody("application/json".toMediaType()))
+                val manifestResponse = api.uploadDeveloperEaManifest(productId, versionId, manifestPart)
+                if (!manifestResponse.isSuccessful) error("Manifest upload failed: ${manifestResponse.code()} ${manifestResponse.errorBody()?.string().orEmpty()}")
+                val validation = api.validateDeveloperEaVersion(productId, versionId)
+                if (!validation.isSuccessful) error("Validation request failed: ${validation.code()} ${validation.errorBody()?.string().orEmpty()}")
+                val body = validation.body().orEmpty()
+                if (body["valid"] != true) error("EA package uploaded, but manifest validation failed: ${body["errors"]}")
+                val scanStatus = ((binaryResponse.body()?.get("binary") as? Map<*, *>)?.get("scan_status") as? String) ?: "UNKNOWN"
+                _publisherResult.value = if (scanStatus == "CLEAN") {
+                    "EA and manifest uploaded. Malware scan is CLEAN; administrator review is still required. The EA is not yet published. Product ID: $productId"
+                } else {
+                    "EA and manifest uploaded and validated. Scan status: $scanStatus. Publication is blocked until a real scanner reports CLEAN and the required review is completed. Product ID: $productId"
+                }
+            } catch (e: Exception) {
+                _publisherResult.value = e.message ?: "EA upload failed"
+            } finally {
+                _publisherBusy.value = false
+            }
+        }
+    }
+    val licenses = repository.licenses
+    val installations = repository.installations
+    val selectedInstallationId = repository.selectedInstallationId
+    val parameterDefinitions = repository.parameterDefinitions
+    val presets = repository.presets
+    val configAuditHistory = repository.configAuditHistory
+    val riskProfiles = repository.riskProfiles
+    val positions = repository.positions
+    val pendingOrders = repository.pendingOrders
+    val tradeHistory = repository.tradeHistory
+    val marketQuote = repository.marketQuote
+    val candlesticks = repository.candlesticks
+    val vpsInstances = repository.vpsInstances
+    val vpsLogs = repository.vpsLogs
+    val notifications = repository.notifications
+    val apiSettings = repository.apiSettings
+    val authSession = repository.authSession
+    private val _authUiError = MutableStateFlow<String?>(null)
+    val authUiError: StateFlow<String?> = _authUiError.asStateFlow()
+
+    fun authenticatePublisher(email: String, password: String, fullName: String?, createAccount: Boolean) {
+        viewModelScope.launch {
+            _publisherBusy.value = true
+            _authUiError.value = null
+            try {
+                val payload = if (createAccount) mapOf("email" to email.trim(), "password" to password, "full_name" to (fullName ?: "").trim())
+                    else mapOf("email" to email.trim(), "password" to password)
+                val response = if (createAccount) ApiClient.apiService.register(payload) else ApiClient.apiService.login(payload)
+                if (!response.isSuccessful) error("Authentication failed: ${response.code()} ${response.errorBody()?.string().orEmpty()}")
+                val session = response.body() ?: error("Backend returned an empty authentication response")
+                ApiClient.setAuthToken(session.accessToken)
+                ApiClient.setRefreshToken(session.refreshToken)
+                // Keep the authenticated session in the repository state.
+                repository.acceptAuthenticatedSession(session)
+            } catch (e: Exception) {
+                _authUiError.value = e.message ?: "Authentication failed"
+            } finally { _publisherBusy.value = false }
+        }
+    }
+    val backendSyncStatus = repository.backendSyncStatus
+
+    fun refreshBackend() {
+        repository.syncFromBackend()
+    }
+
+    // Temporary draft values while in EA Settings screen
+    private val _draftConfigValues = MutableStateFlow<Map<String, String>>(emptyMap())
+    val draftConfigValues: StateFlow<Map<String, String>> = _draftConfigValues.asStateFlow()
+
+    // Status message / snackbar
+    private val _userMessage = MutableStateFlow<String?>(null)
+    val userMessage: StateFlow<String?> = _userMessage.asStateFlow()
+
+    // Settings Mode: Standard vs Advanced
+    private val _isAdvancedMode = MutableStateFlow(false)
+    val isAdvancedMode: StateFlow<Boolean> = _isAdvancedMode.asStateFlow()
+
+    // Emergency Stop Dialog State
+    private val _emergencyDialogVisible = MutableStateFlow(false)
+    val emergencyDialogVisible: StateFlow<Boolean> = _emergencyDialogVisible.asStateFlow()
+
+    private val _selectedEmergencyPolicy = MutableStateFlow(EmergencyStopPolicy.CLOSE_NEW_ENTRIES_ONLY)
+    val selectedEmergencyPolicy: StateFlow<EmergencyStopPolicy> = _selectedEmergencyPolicy.asStateFlow()
+
+    fun navigateTo(destination: ScreenDestination) {
+        if (_currentScreen.value != destination) {
+            screenBackStack.add(_currentScreen.value)
+            _currentScreen.value = destination
+        }
+    }
+
+    fun navigateBack(): Boolean {
+        if (screenBackStack.isNotEmpty()) {
+            _currentScreen.value = screenBackStack.removeAt(screenBackStack.size - 1)
+            return true
+        }
+        return false
+    }
+
+    fun dismissUserMessage() {
+        _userMessage.value = null
+    }
+
+    fun showUserMessage(msg: String) {
+        _userMessage.value = msg
+    }
+
+    fun selectAccount(id: String) {
+        repository.selectAccount(id)
+    }
+
+    fun selectInstallation(id: String) {
+        repository.selectInstallation(id)
+        val inst = installations.value.find { it.id == id }
+        if (inst != null) {
+            _draftConfigValues.value = inst.currentValues
+        }
+    }
+
+    fun setAdvancedMode(isAdvanced: Boolean) {
+        _isAdvancedMode.value = isAdvanced
+    }
+
+    fun updateDraftParam(key: String, value: String) {
+        _draftConfigValues.update { it + (key to value) }
+    }
+
+    fun submitDraftConfiguration(installationId: String) {
+        viewModelScope.launch {
+            val success = repository.updateEaConfiguration(installationId, _draftConfigValues.value)
+            if (success) {
+                _userMessage.value = "Configuration queued for EA deployment (v+1)"
+            } else {
+                _userMessage.value = "Configuration rejected by Account Risk Rules!"
+            }
+        }
+    }
+
+    fun applyPreset(installationId: String, preset: EaPreset) {
+        _draftConfigValues.value = preset.values
+        repository.applyPreset(installationId, preset)
+        _userMessage.value = "Applied preset '${preset.name}'"
+    }
+
+    fun saveCurrentAsPreset(eaProductId: String, name: String, desc: String) {
+        repository.savePreset(eaProductId, name, desc, _draftConfigValues.value)
+        _userMessage.value = "Saved preset '$name'"
+    }
+
+    // Remote Commands
+    fun openEmergencyDialog() {
+        _emergencyDialogVisible.value = true
+    }
+
+    fun dismissEmergencyDialog() {
+        _emergencyDialogVisible.value = false
+    }
+
+    fun setEmergencyPolicy(policy: EmergencyStopPolicy) {
+        _selectedEmergencyPolicy.value = policy
+    }
+
+    fun executeEmergencyStop(accountId: String) {
+        viewModelScope.launch {
+            val policy = _selectedEmergencyPolicy.value
+            _emergencyDialogVisible.value = false
+            val success = repository.sendAccountCommand(accountId, CommandType.EMERGENCY_STOP, policy)
+            _userMessage.value = if (success) {
+                "Emergency Stop triggered on Account ($policy)"
+            } else {
+                "Emergency Stop was rejected or could not be delivered"
+            }
+        }
+    }
+
+    fun pauseAccount(accountId: String) {
+        viewModelScope.launch {
+            val success = repository.sendAccountCommand(accountId, CommandType.PAUSE)
+            _userMessage.value = if (success) "Paused all EAs on Account" else "Pause command failed"
+        }
+    }
+
+    fun resumeAccount(accountId: String) {
+        viewModelScope.launch {
+            val success = repository.sendAccountCommand(accountId, CommandType.RESUME)
+            _userMessage.value = if (success) "Resumed active EAs on Account" else "Resume command failed"
+        }
+    }
+
+    fun setInstallationStatus(installationId: String, status: EaRuntimeStatus) {
+        viewModelScope.launch {
+            repository.setInstallationStatus(installationId, status)
+            _userMessage.value = "EA status changed to ${status.name}"
+        }
+    }
+
+    // Add MT5 Account
+    fun addAccount(label: String, broker: String, server: String, accountNum: String, env: AccountEnvironment, balance: Double) {
+        runCatching { repository.addAccount(label, broker, server, accountNum, env, balance) }
+            .onFailure { _userMessage.value = it.message ?: "MT5 account linking is not available yet" }
+    }
+
+    fun removeAccount(id: String) {
+        repository.removeAccount(id)
+        _userMessage.value = "Account disconnected and removed"
+    }
+
+    // Assign EA
+    fun assignEa(ea: EaProduct, account: BrokerAccount, magicNumber: Long, tf: String) {
+        runCatching { repository.assignEaToAccount(ea, account, magicNumber, tf) }
+            .onFailure { _userMessage.value = it.message ?: "MT5 installation is not available yet" }
+    }
+
+    // Purchase License
+    fun purchaseLicense(eaProductId: String, type: LicenseType) {
+        runCatching { repository.purchaseLicense(eaProductId, type) }
+            .onFailure { _userMessage.value = it.message ?: "Checkout is not configured yet" }
+    }
+
+    // VPS controls
+    fun restartVps(vpsId: String) {
+        repository.restartVps(vpsId)
+        _userMessage.value = "Managed VPS controls are not enabled yet"
+    }
+
+    fun stopVps(vpsId: String) {
+        repository.stopVps(vpsId)
+        _userMessage.value = "Managed VPS controls are not enabled yet"
+    }
+
+    fun placeOrder(
+        accountId: String,
+        eaInstallationId: String,
+        eaName: String,
+        direction: TradeDirection,
+        lotSize: Double,
+        stopLoss: Double?,
+        takeProfit: Double?,
+        magicNumber: Long
+    ) {
+        viewModelScope.launch {
+            runCatching {
+                repository.placeOrder(accountId, eaInstallationId, eaName, direction, lotSize, stopLoss, takeProfit, magicNumber)
+            }.onFailure { _userMessage.value = it.message ?: "MT5 trading is not available yet" }
+        }
+    }
+
+    fun closePosition(ticket: Long) {
+        viewModelScope.launch {
+            runCatching { repository.closePosition(ticket) }
+                .onFailure { _userMessage.value = it.message ?: "MT5 position management is not available yet" }
+        }
+    }
+
+    fun deletePreset(id: String) {
+        repository.deletePreset(id)
+        _userMessage.value = "Preset deleted"
+    }
+
+    fun saveRiskProfile(profile: AccountRiskProfile) {
+        repository.saveRiskProfile(profile)
+        _userMessage.value = "Account risk profile updated & enforced"
+    }
+
+    fun updateApiUrl(url: String) {
+        repository.updateApiBaseUrl(url)
+        _userMessage.value = "API endpoint updated"
+    }
+}

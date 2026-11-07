@@ -1,0 +1,1723 @@
+MASTER BUILD PROMPT: XAU PILOT
+
+Premium Multi-EA MT5 Automated Trading Platform
+
+Act as a senior Android engineer, fintech software architect, backend engineer, MQL5 integration specialist, database architect, cybersecurity engineer and premium UI/UX designer.
+
+Your task is to design and build a production-oriented Android application and supporting backend platform for a commercial automated trading software service.
+
+The working project name is XAU Pilot. The final commercial brand name must remain configurable as "[FINAL BRAND NAME]".
+
+Do not build a basic trading dashboard or a static UI prototype. Build a modular, scalable application with real authentication architecture, database models, API integration, EA management workflows, licensing, configuration management, account isolation, and secure MT5 connectivity.
+
+Where external services or credentials are unavailable, implement clear integration interfaces and labelled demo functionality. Never pretend that an external service is connected when it is not.
+
+---
+
+1. PRODUCT VISION
+
+Build a premium Android application that allows customers to:
+
+1. Register and manage their accounts.
+2. Connect multiple MetaTrader 5 accounts.
+3. Browse a marketplace containing multiple Expert Advisors.
+4. Purchase monthly, annual or lifetime EA licences.
+5. Install EAs using customer-hosted MT5 or XAU Pilot managed VPS hosting.
+6. Assign different EAs to different MT5 accounts.
+7. Run multiple compatible EAs across their authorised accounts.
+8. Adjust EA inputs remotely through the mobile application.
+9. Monitor EA activity and account status.
+10. View open positions, pending orders, trade history and performance statistics.
+11. Pause, resume and control their EAs remotely.
+12. Manage account-wide and EA-specific risk settings.
+13. Manage VPS hosting, subscriptions, licences, notifications and support.
+
+The platform must support multiple customers independently. Each customer's accounts, EAs, configurations, licences, trades, positions, commands and hosting resources must be isolated.
+
+The platform must not operate as a broker or hold customer trading funds.
+
+Customers trade through their own broker accounts.
+
+The initial release must prioritise DEMO trading. LIVE trading must remain disabled until the appropriate security, legal, operational and broker approvals have been completed.
+
+---
+
+2. PRODUCT ARCHITECTURE
+
+Build the following components:
+
+A. Native Android application.
+
+B. Secure backend API.
+
+C. PostgreSQL database.
+
+D. Redis cache and command queue.
+
+E. MT5 EA communication bridge.
+
+F. EA catalogue and licensing service.
+
+G. EA configuration management service.
+
+H. Managed VPS provisioning and installation service.
+
+I. Subscription and billing integration layer.
+
+J. Notification and audit services.
+
+Architecture
+
+Android application
+→ HTTPS REST API / WebSocket
+→ FastAPI backend
+→ Authentication and authorisation
+→ PostgreSQL / Redis
+→ EA licensing and configuration services
+→ Authenticated EA bridge
+→ MT5 terminal
+→ Customer's own broker account.
+
+For managed VPS, use a separate isolated MT5 terminal environment for each customer.
+
+For customer-hosted installations, the EA communicates with the backend from the customer's own MT5 terminal.
+
+The Android application must never attempt to execute ".ex5" files directly.
+
+Expert Advisors must execute inside MetaTrader 5 terminals.
+
+---
+
+3. TECHNOLOGY STACK
+
+Android
+
+Use:
+
+- Kotlin.
+- Jetpack Compose.
+- Material 3.
+- MVVM architecture.
+- Navigation Compose.
+- Kotlin Coroutines.
+- StateFlow and Flow.
+- Retrofit or equivalent HTTP client.
+- OkHttp.
+- WebSocket connectivity.
+- Secure token storage.
+- Firebase Cloud Messaging for push notifications, if configured.
+- Repository pattern.
+- Dependency injection.
+- Room only where local persistence is appropriate.
+
+Create a maintainable, modular Android project.
+
+Recommended modules:
+
+- app
+- core
+- core-ui
+- core-network
+- core-database
+- core-security
+- feature-auth
+- feature-home
+- feature-marketplace
+- feature-accounts
+- feature-installations
+- feature-ea-settings
+- feature-positions
+- feature-history
+- feature-risk
+- feature-licensing
+- feature-vps
+- feature-notifications
+- feature-profile
+
+Backend
+
+Use:
+
+- Python.
+- FastAPI.
+- PostgreSQL.
+- SQLAlchemy.
+- Alembic migrations.
+- Redis.
+- JWT access tokens with refresh-token rotation.
+- Role-based and tenant-based authorisation.
+- HTTPS.
+- WebSocket support.
+- Background workers for installation and configuration jobs.
+- Structured logging.
+- Audit trails.
+
+MT5
+
+Use:
+
+- MQL5.
+- A separate "XauPilotBridge.mqh" module.
+- HTTPS WebRequest communication.
+- Timer-based polling.
+- OnTradeTransaction integration where appropriate.
+- Versioned remote configuration.
+- Secure installation-specific authentication.
+
+Hosting
+
+Use:
+
+- Containerised backend services.
+- Managed PostgreSQL.
+- Managed Redis.
+- Secure object storage for EA packages.
+- Isolated Windows VPS environments for MT5 terminals.
+- Monitoring and automated backups.
+- Centralised logs and alerts.
+
+Keep all secrets, passwords, signing keys and API credentials out of source code.
+
+---
+
+4. USER AUTHENTICATION AND ACCOUNT MANAGEMENT
+
+Create:
+
+- Splash screen.
+- Onboarding.
+- Registration.
+- Login.
+- Forgot password.
+- Email verification.
+- Multi-factor authentication support.
+- Session management.
+- Logout.
+- Account deletion request.
+- Privacy settings.
+
+Authentication must be backed by the backend.
+
+Implement:
+
+- Secure password hashing.
+- Short-lived access tokens.
+- Rotating refresh tokens.
+- Token revocation.
+- Login rate limiting.
+- Device/session management.
+- Server-side authorisation.
+- Optional MFA.
+
+Support customer roles:
+
+- Customer.
+- Support agent.
+- Administrator.
+- Super administrator.
+
+Enforce permissions on the backend. Hiding a button in Android must never be treated as security authorisation.
+
+---
+
+5. MULTI-TENANT CUSTOMER ARCHITECTURE
+
+Each customer must have a separate tenant.
+
+Each tenant can own:
+
+- Multiple MT5 accounts.
+- Multiple EA licences.
+- Multiple EA installations.
+- Multiple configuration profiles.
+- Multiple VPS instances, subject to plan limits.
+- Multiple presets.
+- Trade history.
+- Positions.
+- Commands.
+- Notifications.
+
+All customer-owned data must be scoped by tenant ID.
+
+Use database foreign keys, indexes, tenant-scoped queries and PostgreSQL Row Level Security as an additional protection layer.
+
+Never allow one customer to access another customer's account, EA, trades, configuration, VPS, credentials or licence.
+
+---
+
+6. MT5 ACCOUNT MANAGEMENT
+
+Create an Accounts section.
+
+Customers must be able to:
+
+- Add multiple MT5 accounts.
+- Edit account labels.
+- Select demo or live environment.
+- Select broker.
+- View account number in masked form.
+- View account connection status.
+- View balance.
+- View equity.
+- View free margin.
+- View used margin.
+- View margin level.
+- View currency.
+- View leverage where available.
+- View account server.
+- View assigned EAs.
+- View account-wide risk settings.
+- Disconnect or remove an account.
+
+Do not store broker passwords in ordinary application databases.
+
+For customer-hosted installations, credentials should remain inside the customer's MT5 environment.
+
+For managed VPS, credentials must be handled through a secure provisioning and secret-management process, encrypted and access-restricted.
+
+Do not display or log credentials.
+
+Clearly distinguish:
+
+- Demo account.
+- Live account.
+- Connected.
+- Disconnected.
+- Connecting.
+- Error.
+- Unverified.
+
+Do not invent balances or account data.
+
+---
+
+7. EA MARKETPLACE
+
+Build a premium marketplace supporting multiple EA products.
+
+Each EA product must have:
+
+- Name.
+- Product code.
+- Description.
+- Logo or product image.
+- Version.
+- Supported instruments.
+- Supported timeframes.
+- Strategy category.
+- Supported MT5 builds.
+- Installation methods.
+- Supported environments.
+- Available licence types.
+- Input parameters.
+- Release notes.
+- Compatibility information.
+- Risk disclosures.
+- Documentation.
+- Support information.
+- Publication status.
+
+Example product categories:
+
+- Gold scalping.
+- Gold trend following.
+- Gold swing trading.
+- Gold breakout.
+- Gold intraday.
+- Multi-strategy.
+
+Example catalogue products:
+
+- Gold Pro EA.
+- Gold Scalper EA.
+- Gold Swing EA.
+- Gold Trend EA.
+
+These are illustrative products. Do not fabricate actual trading performance or claim that any product is profitable.
+
+Catalogue information must come from the backend.
+
+Provide:
+
+- Search.
+- Filters.
+- Category navigation.
+- EA details.
+- Compare products.
+- Licence selection.
+- Purchase.
+- Activate licence.
+- View compatibility.
+- View version history.
+
+Support multiple EA products under one customer account.
+
+---
+
+8. EA LICENSING AND BILLING
+
+Support:
+
+1. Monthly licences.
+2. Annual licences.
+3. Lifetime licences.
+
+Licensing must be product-specific.
+
+A lifetime EA licence does not automatically provide lifetime VPS hosting, cloud services, support or future premium features.
+
+Each licence must define:
+
+- EA product.
+- Licence type.
+- Start date.
+- Expiration date, if applicable.
+- Status.
+- Maximum installations.
+- Maximum accounts.
+- Allowed environments.
+- Subscription status.
+- Renewal information.
+
+Licence states:
+
+- Pending.
+- Active.
+- Expired.
+- Suspended.
+- Revoked.
+- Cancelled.
+
+Backend licensing must enforce all limits.
+
+Use payment provider integrations through a secure billing layer.
+
+Do not store payment card details directly.
+
+Implement signed and verified billing webhooks, idempotency and payment audit records.
+
+Never show a purchase as successful until the payment provider confirms it.
+
+---
+
+9. MULTI-EA AND MULTI-ACCOUNT INSTALLATION
+
+Customers can select multiple EAs and assign them to different MT5 accounts.
+
+Example:
+
+Account 01:
+
+- Gold Pro EA.
+- Gold Scalper EA.
+
+Account 02:
+
+- Gold Swing EA.
+
+Account 03:
+
+- Gold Trend EA.
+
+Each installation must have its own:
+
+- EA product.
+- Version.
+- Licence.
+- MT5 account.
+- Configuration.
+- Instance identity.
+- Runtime status.
+- Installation status.
+- Command history.
+- Configuration history.
+
+Prevent incompatible EA combinations.
+
+Use compatibility rules to identify conflicting magic numbers, duplicate strategies, conflicting order management or aggregate exposure.
+
+Do not assume that every EA can safely run alongside every other EA.
+
+The backend must enforce installation and licence limits.
+
+---
+
+10. TWO EA INSTALLATION METHODS
+
+Implement both installation methods.
+
+A. Customer-hosted installation
+
+The customer uses their own MT5 terminal.
+
+Workflow:
+
+1. Customer selects an EA.
+2. Customer selects an MT5 account.
+3. Backend checks the licence.
+4. Backend checks account compatibility.
+5. App provides an authorised EA package download.
+6. App shows guided installation instructions.
+7. Customer places the ".ex5" file in the correct MT5 "MQL5/Experts" directory.
+8. Customer attaches the EA to the correct chart.
+9. Customer configures the backend URL in MT5 WebRequest permissions.
+10. EA enrols with the XAU Pilot backend.
+11. Backend verifies the installation.
+12. App displays installed/running only after confirmed heartbeat.
+
+Provide illustrated installation instructions and troubleshooting.
+
+Do not claim the Android app can silently attach an EA to a customer's external MT5 desktop terminal.
+
+B. XAU Pilot managed VPS
+
+Allow customers to purchase or subscribe to managed VPS hosting.
+
+Workflow:
+
+1. Select EA.
+2. Select MT5 account.
+3. Select VPS plan.
+4. Verify licence.
+5. Provision an isolated Windows VPS or equivalent isolated terminal environment.
+6. Install MT5.
+7. Configure the terminal.
+8. Deploy the authorised EA package.
+9. Configure the correct symbol and timeframe.
+10. Enrol the EA with the backend.
+11. Verify heartbeat.
+12. Display actual installation status.
+
+Each customer must have an isolated environment.
+
+Never run different customers' trading accounts inside one shared MT5 terminal process or shared writable installation directory.
+
+Support:
+
+- Provision VPS.
+- View VPS status.
+- Restart VPS.
+- Stop VPS.
+- View resource usage.
+- View MT5 terminal status.
+- View EA installations.
+- View logs.
+- Update terminal.
+- Update EA.
+- Cancel hosting.
+
+VPS actions must be authorised and audited.
+
+---
+
+11. EA INPUT ADJUSTMENT — STANDARD AND ADVANCED MODES
+
+This is a mandatory core feature.
+
+Customers must be able to change supported EA inputs directly from the Android application without manually editing settings in MT5 for every update.
+
+Build two configuration modes.
+
+A. Standard Mode
+
+Beginner-friendly settings.
+
+Possible inputs, only when supported by the EA:
+
+- Lot size.
+- Risk percentage.
+- Stop loss.
+- Take profit.
+- Maximum open trades.
+- Trading direction.
+- Trailing stop.
+- Break-even.
+- Trading sessions.
+- Maximum spread.
+
+Use appropriate mobile controls:
+
+- Numeric fields.
+- Decimal fields.
+- Sliders.
+- Switches.
+- Dropdown selectors.
+- Radio options.
+- Time selectors.
+
+Display a short explanation for each parameter.
+
+B. Advanced Mode
+
+Provide access to all additional customer-permitted EA parameters.
+
+Possible categories:
+
+- Money management.
+- Entry strategy.
+- Exit strategy.
+- Indicator periods.
+- Entry thresholds.
+- Exit thresholds.
+- Strategy filters.
+- Trading sessions.
+- Execution settings.
+- Position management.
+- Advanced stop management.
+- EA-specific parameters.
+
+Only show parameters actually supported by the selected EA version.
+
+Never invent parameter names, units, defaults, ranges or descriptions.
+
+C. Protected settings
+
+Certain settings must remain admin-controlled and non-bypassable:
+
+- Maximum account exposure.
+- Maximum daily loss.
+- Platform-level maximum risk.
+- Licence restrictions.
+- Mandatory safety checks.
+- Account-wide limits.
+
+Customers must not be able to override these protections through Advanced Mode or imported presets.
+
+D. Dynamic parameter definitions
+
+Create an input-definition system.
+
+Each parameter definition should include:
+
+- Parameter key.
+- Display label.
+- Description.
+- Data type.
+- Default value.
+- Minimum value.
+- Maximum value.
+- Step.
+- Unit.
+- Category.
+- Visibility mode.
+- Editable status.
+- Requires restart.
+- Requires no open positions.
+- EA version.
+
+Support:
+
+- Boolean.
+- Integer.
+- Decimal.
+- String.
+- Enumeration.
+- Time.
+- Other explicitly supported parameter types.
+
+Generate the mobile settings screen dynamically using these definitions.
+
+Example definition:
+
+{
+"key": "lot_size",
+"label": "Lot Size",
+"description": "Trade volume used by the EA",
+"type": "decimal",
+"default": 0.01,
+"minimum": 0.01,
+"maximum": 1.0,
+"step": 0.01,
+"unit": "lots",
+"category": "money_management",
+"visibility": "standard",
+"editable": true,
+"requires_restart": false,
+"requires_no_open_positions": false
+}
+
+This is an example only. Actual definitions must come from the EA's real MQL5 source and approved product metadata.
+
+E. Per-installation configurations
+
+Every EA installation must have an independent configuration.
+
+Example:
+
+Gold Pro EA / Account 01: Lot size 0.01.
+
+Gold Pro EA / Account 02: Lot size 0.05.
+
+Gold Scalper EA / Account 01: Lot size 0.01.
+
+A change on one installation must never change another installation's configuration.
+
+F. Configuration workflow
+
+When a customer changes settings:
+
+1. Validate input in Android.
+2. Submit configuration to backend.
+3. Verify tenant ownership.
+4. Verify installation and licence.
+5. Check account-wide risk limits.
+6. Check EA-specific limits.
+7. Create a new configuration version.
+8. Store desired configuration.
+9. Queue deployment.
+10. EA receives configuration.
+11. EA validates values locally.
+12. EA applies safe changes.
+13. EA acknowledges the exact version.
+14. Backend records the applied configuration.
+15. App updates the confirmed configuration display.
+
+Use version numbers and unique command IDs.
+
+Do not display desired values as applied values before EA acknowledgement.
+
+G. Configuration states
+
+Support:
+
+- Draft.
+- Pending.
+- Delivered.
+- Applied.
+- Rejected.
+- Expired.
+- Failed.
+- Restart required.
+- Waiting for open positions to close.
+
+Show clear explanations when a setting is rejected.
+
+H. MQL5 runtime configuration
+
+Standard MQL5 "input" variables are normally initialisation parameters. Changing a stored input value remotely does not automatically change the native input variable of a running EA.
+
+Build a separate runtime configuration layer.
+
+The EA must initialise runtime values from its standard inputs and then use validated active runtime values for all relevant strategy calculations.
+
+For example:
+
+- InitialLotSize.
+- ActiveLotSize.
+- InitialStopLoss.
+- ActiveStopLoss.
+- InitialTakeProfit.
+- ActiveTakeProfit.
+
+Refactor the existing EA carefully so the strategy reads the appropriate active configuration.
+
+Do not rewrite the existing trading strategy unnecessarily.
+
+Inspect the original source before modifying it.
+
+Some inputs may require controlled EA reinitialisation. Mark these accurately.
+
+If a setting cannot safely change while positions are open, delay application or require the appropriate safe procedure.
+
+Existing position management must remain operational during configuration changes.
+
+I. Presets
+
+Allow customers to:
+
+- Save presets.
+- Name presets.
+- Edit presets.
+- Duplicate presets.
+- Delete presets.
+- Apply presets.
+- Restore default settings.
+- Compare configurations.
+- Roll back to a previous confirmed version.
+
+Illustrative preset names:
+
+- Conservative.
+- Balanced.
+- Custom.
+- High-risk.
+
+These names are labels only. Do not represent them as financial advice or profit guarantees.
+
+Validate every preset against the destination EA version and account risk rules.
+
+J. Configuration audit
+
+Record:
+
+- Customer.
+- Tenant.
+- EA installation.
+- MT5 account.
+- Parameter changed.
+- Old value.
+- New value.
+- Configuration version.
+- User who submitted it.
+- Submission time.
+- Application time.
+- EA acknowledgement.
+- Rejection reason.
+
+Configuration history must be available to customers and authorised administrators.
+
+---
+
+12. ACCOUNT-WIDE RISK MANAGEMENT
+
+Risk controls must exist at two levels:
+
+1. Account-wide.
+2. Individual EA installation.
+
+Account-wide controls take precedence.
+
+Support:
+
+- Maximum daily loss.
+- Maximum total exposure.
+- Maximum lot size.
+- Maximum open positions.
+- Maximum trades per day.
+- Maximum spread.
+- Minimum margin level.
+- Trading sessions.
+- Allowed instruments.
+- Emergency stop policy.
+
+Where multiple EAs operate on one MT5 account, aggregate risk must be checked.
+
+Prevent one EA from exceeding the account-wide risk budget because another EA is also trading.
+
+EA-specific settings cannot override account-wide protections.
+
+Never automatically close all open positions when an emergency stop is requested unless the customer has explicitly selected and confirmed a supported close-position policy.
+
+Default pause behaviour should block new entries while allowing the EA to manage existing positions safely.
+
+---
+
+13. REMOTE EA CONTROL
+
+Provide controls:
+
+- Pause.
+- Resume.
+- Stop.
+- Emergency stop.
+
+Define their meaning clearly.
+
+Pause:
+Block new entries while continuing safe management of existing positions.
+
+Resume:
+Allow new entries only when account and EA safeguards permit.
+
+Stop:
+Disable new entries and follow the explicitly defined existing-position policy.
+
+Emergency stop:
+Execute the configured emergency policy. Do not assume this means close every open trade.
+
+Commands must be versioned, authenticated, time-limited and acknowledged.
+
+Command states:
+
+- Pending.
+- Delivered.
+- Applied.
+- Rejected.
+- Expired.
+- Failed.
+
+If an EA is offline, show that the command is waiting.
+
+Never claim that a command was applied without EA acknowledgement.
+
+---
+
+14. EA COMMUNICATION BRIDGE
+
+Create a separate MQL5 module named:
+
+"XauPilotBridge.mqh"
+
+Implement a bridge interface containing:
+
+- XauPilot_Init()
+- XauPilot_StartTimer()
+- XauPilot_Heartbeat()
+- XauPilot_SendStatus()
+- XauPilot_ProcessCommands()
+- XauPilot_AcknowledgeCommand()
+- XauPilot_ReportTradeEvent()
+- XauPilot_SendPositions()
+- XauPilot_CheckLicense()
+- XauPilot_LoadConfiguration()
+- XauPilot_ApplyConfiguration()
+- XauPilot_Deinit()
+
+Use:
+
+- HTTPS WebRequest.
+- Installation-specific credentials.
+- Short-lived authentication tokens.
+- Timer-based polling.
+- Bounded request timeouts.
+- Retry backoff.
+- Request IDs.
+- Configuration versioning.
+- Command expiry.
+- Replay protection.
+- Local validation.
+
+Do not perform network requests on every market tick.
+
+A timer interval of approximately 10–30 seconds can be used initially, subject to operational testing.
+
+Use OnTradeTransaction for trade event reporting where appropriate.
+
+Before integrating the bridge, inspect the EA's existing:
+
+- OnInit.
+- OnDeinit.
+- OnTick.
+- OnTimer.
+- OnTradeTransaction.
+- Input declarations.
+- Trade execution functions.
+- Position management.
+- Magic numbers.
+- Existing timers.
+- Dependencies.
+
+Never add duplicate event handlers.
+
+Preserve existing trading behaviour.
+
+Do not generate a supposedly complete production bridge without defining the backend request and response contracts.
+
+---
+
+15. HOME DASHBOARD
+
+Create a premium home dashboard showing:
+
+- Total number of connected MT5 accounts.
+- Number of installed EAs.
+- Running EAs.
+- Paused EAs.
+- Disconnected EAs.
+- Active licences.
+- VPS status.
+- Open positions.
+- Account balance and equity.
+- Today's realised P/L.
+- Floating P/L.
+- Recent trading activity.
+
+Provide filters:
+
+- All accounts.
+- Individual account.
+- All EAs.
+- Individual EA.
+- Demo.
+- Live.
+
+Do not combine balances across different currencies without clearly labelled conversion and exchange-rate information.
+
+Do not display fake profits, fabricated deposits, simulated withdrawals or fictitious trades.
+
+Clearly identify simulated or demo data.
+
+---
+
+16. POSITIONS, ORDERS AND TRADE HISTORY
+
+Create a Positions section.
+
+Display:
+
+- Ticket number.
+- MT5 account.
+- EA name.
+- Symbol.
+- Buy or sell.
+- Lot size.
+- Entry price.
+- Current price.
+- Stop loss.
+- Take profit.
+- Floating P/L.
+- Open time.
+
+Create a trade history section:
+
+- Closed trades.
+- Entry and exit prices.
+- Net profit/loss.
+- Commission.
+- Swap.
+- Closing time.
+- EA name.
+- MT5 account.
+- Symbol.
+
+Provide filters by:
+
+- Date.
+- Account.
+- EA.
+- Symbol.
+- Direction.
+- Environment.
+
+Clearly distinguish open positions, pending orders and closed trades.
+
+---
+
+17. CHARTS AND MARKET DATA
+
+Provide chart screens for:
+
+- XAUUSD.
+- M1.
+- M5.
+- M15.
+- M30.
+- H1.
+- H4.
+- D1.
+
+Support appropriate technical indicators and chart controls.
+
+Market data must come from an actual configured data source.
+
+Display:
+
+- Source.
+- Symbol.
+- Broker or feed.
+- Last update time.
+- Whether data is delayed.
+- Whether the chart is simulated.
+
+Never hardcode a supposedly live gold price.
+
+Do not imply that a separate chart feed necessarily matches the customer's broker execution price.
+
+---
+
+18. VPS MANAGEMENT
+
+Create a dedicated VPS screen.
+
+Show:
+
+- VPS plan.
+- Provisioning status.
+- Operating system.
+- Server region.
+- Resource usage.
+- MT5 terminal status.
+- Installed EAs.
+- Uptime.
+- Last heartbeat.
+- Maintenance notices.
+
+Actions:
+
+- Provision.
+- Start.
+- Stop.
+- Restart.
+- Upgrade.
+- Cancel.
+- View logs.
+- View installation details.
+
+VPS provisioning must be asynchronous.
+
+Display Pending until the provider and installation agent confirm success.
+
+Use isolated environments and least-privilege access.
+
+---
+
+19. NOTIFICATIONS
+
+Implement in-app and push notifications for:
+
+- EA connected.
+- EA disconnected.
+- EA stopped.
+- EA resumed.
+- Configuration applied.
+- Configuration rejected.
+- Configuration waiting.
+- EA updated.
+- Licence expiring.
+- Licence expired.
+- Subscription payment failed.
+- VPS provisioning complete.
+- VPS offline.
+- Risk limit triggered.
+- Trade opened.
+- Trade closed.
+- Emergency command status.
+
+Allow users to manage notification preferences.
+
+Never expose account passwords or sensitive credentials in notifications.
+
+---
+
+20. ADMINISTRATION PANEL
+
+Create a secure administrative backend interface.
+
+Administrators should be able to manage:
+
+- Customers.
+- Tenants.
+- Roles.
+- EA products.
+- EA versions.
+- EA packages.
+- Parameter definitions.
+- EA compatibility rules.
+- Licences.
+- Subscriptions.
+- VPS plans.
+- Installation jobs.
+- Configuration jobs.
+- Notifications.
+- Support tickets.
+- Audit logs.
+- Platform settings.
+
+Super administrators may publish or retire EA versions.
+
+Require authorisation and audit logging for sensitive changes.
+
+Never allow support staff to see customer broker passwords.
+
+---
+
+21. DATABASE SCHEMA
+
+Create PostgreSQL migrations for the following entities.
+
+Identity and tenancy
+
+- users
+- tenants
+- tenant_members
+- user_sessions
+
+Accounts
+
+- broker_accounts
+- account_risk_profiles
+
+Marketplace
+
+- ea_products
+- ea_versions
+- ea_product_features
+- ea_compatibility_rules
+
+Licensing
+
+- subscriptions
+- licenses
+- ea_licenses
+- billing_transactions
+
+Installations
+
+- ea_installations
+- ea_instances
+- ea_installation_jobs
+- ea_instance_events
+- vps_instances
+
+EA configuration
+
+- ea_input_definitions
+- ea_configurations
+- ea_config_values
+- ea_config_versions
+- ea_config_deployments
+- ea_presets
+
+Trading data
+
+- positions
+- trade_events
+- orders
+- heartbeats
+- account_snapshots
+
+Remote control
+
+- commands
+- command_acknowledgements
+
+Platform
+
+- notifications
+- audit_logs
+- support_tickets
+- api_keys
+- installation_credentials
+
+Use UUID primary keys.
+
+Use foreign keys and appropriate indexes.
+
+Use NUMERIC for financial values.
+
+Use UTC timestamptz for timestamps.
+
+Store money and trading quantities with appropriate precision.
+
+Use immutable or append-only trade event records where appropriate.
+
+Never store plaintext passwords, broker credentials, access tokens or signing secrets.
+
+Use secure secret management and encryption for sensitive data.
+
+Use unique constraints to prevent duplicate installations and command processing.
+
+Include tenant isolation and appropriate PostgreSQL Row Level Security policies.
+
+---
+
+22. BACKEND API ENDPOINTS
+
+Use base path "/api/v1".
+
+Implement the following API structure.
+
+Authentication
+
+POST /auth/register
+
+POST /auth/login
+
+POST /auth/refresh
+
+POST /auth/logout
+
+GET /users/me
+
+Tenant
+
+GET /tenants/current
+
+GET /tenants/current/members
+
+Broker accounts
+
+POST /broker-accounts
+
+GET /broker-accounts
+
+GET /broker-accounts/{id}
+
+DELETE /broker-accounts/{id}
+
+GET /broker-accounts/{id}/ea-installations
+
+GET /broker-accounts/{id}/risk-profile
+
+PUT /broker-accounts/{id}/risk-profile
+
+EA marketplace
+
+GET /ea-products
+
+GET /ea-products/{id}
+
+GET /ea-products/{id}/versions
+
+GET /ea-products/{id}/compatibility
+
+Licensing
+
+GET /ea-licenses
+
+POST /ea-licenses/purchase
+
+POST /ea-licenses/{id}/activate
+
+GET /licenses/current
+
+EA installations
+
+POST /ea-installations
+
+GET /ea-installations
+
+GET /ea-installations/{id}
+
+POST /ea-installations/{id}/activate
+
+POST /ea-installations/{id}/uninstall
+
+POST /ea-installations/{id}/update
+
+POST /ea-installations/{id}/reassign
+
+GET /ea-installations/{id}/logs
+
+EA inputs and configuration
+
+GET /ea-installations/{id}/inputs
+
+GET /ea-installations/{id}/configuration
+
+PUT /ea-installations/{id}/configuration
+
+POST /ea-installations/{id}/configuration/apply
+
+GET /ea-installations/{id}/configuration/status
+
+GET /ea-installations/{id}/configuration/history
+
+POST /ea-installations/{id}/configuration/restore
+
+POST /ea-installations/{id}/presets
+
+GET /ea-installations/{id}/presets
+
+POST /ea-installations/{id}/presets/{preset_id}/apply
+
+VPS
+
+POST /hosting/managed-vps
+
+GET /hosting/managed-vps
+
+POST /hosting/managed-vps/{id}/stop
+
+POST /hosting/managed-vps/{id}/restart
+
+POST /hosting/managed-vps/{id}/installations
+
+GET /hosting/managed-vps/{id}/installations
+
+EA bridge
+
+POST /ea/v1/enroll
+
+POST /ea/v1/heartbeat
+
+POST /ea/v1/status
+
+GET /ea/v1/commands/next
+
+POST /ea/v1/commands/{id}/ack
+
+POST /ea/v1/trade-events
+
+POST /ea/v1/positions/snapshot
+
+POST /ea/v1/license/validate
+
+GET /ea/v1/configuration/next
+
+POST /ea/v1/configuration/{id}/ack
+
+POST /ea/v1/diagnostics
+
+Account controls
+
+POST /accounts/{id}/commands/pause
+
+POST /accounts/{id}/commands/resume
+
+POST /accounts/{id}/commands/stop
+
+POST /accounts/{id}/commands/emergency-stop
+
+GET /accounts/{id}/positions
+
+GET /accounts/{id}/trades
+
+GET /accounts/{id}/status
+
+GET /accounts/{id}/metrics
+
+Billing
+
+GET /plans
+
+POST /billing/checkout
+
+POST /billing/webhooks/{provider}
+
+GET /subscriptions/current
+
+Every endpoint must enforce authentication, tenant ownership and role permissions.
+
+EA bridge endpoints must use separate installation credentials and must never trust a customer-supplied tenant ID without validating the installation identity.
+
+Use idempotency keys for operations that could otherwise be duplicated.
+
+Validate all request payloads.
+
+Provide standard error responses and OpenAPI documentation.
+
+---
+
+23. ANDROID APPLICATION NAVIGATION
+
+Use a bottom navigation bar with five main sections:
+
+1. Home.
+2. Marketplace.
+3. Accounts.
+4. Positions.
+5. Profile.
+
+EA management must also be accessible from Home and account details.
+
+Create the following screens:
+
+- Splash.
+- Onboarding.
+- Register.
+- Login.
+- Forgot password.
+- Home dashboard.
+- Marketplace.
+- EA product details.
+- Purchase licence.
+- Licence management.
+- MT5 account list.
+- Add MT5 account.
+- Account details.
+- EA assignment wizard.
+- Customer-hosted installation guide.
+- Managed VPS provisioning.
+- VPS details.
+- EA installations.
+- EA details.
+- Standard settings.
+- Advanced settings.
+- Configuration history.
+- Configuration presets.
+- Risk management.
+- Open positions.
+- Pending orders.
+- Trade history.
+- Charts.
+- Notifications.
+- Support.
+- User profile.
+- Security settings.
+- Subscription management.
+- Legal and risk disclosures.
+
+Use responsive layouts that work on common Android phone sizes.
+
+---
+
+24. VISUAL DESIGN SYSTEM
+
+Design a premium, modern financial technology application.
+
+Visual direction:
+
+- Dark charcoal background.
+- Matte black surfaces.
+- Refined gold accents.
+- White primary text.
+- Muted grey secondary text.
+- Clear green positive status.
+- Clear red negative or warning status.
+- Restrained animation.
+- Professional charts.
+- High-quality icons.
+- Smooth transitions.
+- Consistent spacing.
+- Excellent mobile readability.
+
+Do not make the app look like a generic admin dashboard.
+
+Use premium typography and consistent design tokens.
+
+Use gold primarily for branding and important actions, not to imply guaranteed returns.
+
+Build a light theme as well as the dark theme, while preserving the brand identity.
+
+Ensure accessibility, readable contrast and appropriate touch targets.
+
+---
+
+25. FINANCIAL AND TRADING SAFETY
+
+The platform must not:
+
+- Guarantee profits.
+- Promise zero losses.
+- Claim guaranteed execution.
+- Fabricate performance.
+- Invent live prices.
+- Invent trade records.
+- Invent broker connections.
+- Pretend an EA is running without a confirmed heartbeat.
+- Claim settings are applied without acknowledgement.
+- Automatically close customer positions without an authorised policy.
+- Bypass broker restrictions.
+- Bypass local EA safety protections.
+
+Clearly disclose:
+
+- Automated trading risks.
+- Leverage risks.
+- Slippage.
+- Spread changes.
+- Broker execution differences.
+- VPS outages.
+- Internet outages.
+- EA and software risks.
+- Demo versus live trading.
+
+The customer must remain in control of their own broker relationship and funds.
+
+Before enabling public live trading or selling paid managed trading services, require legal and regulatory review in Kuwait and every relevant customer jurisdiction.
+
+Review applicable Google Play financial-services policies and payment requirements.
+
+---
+
+26. SECURITY REQUIREMENTS
+
+Implement:
+
+- TLS.
+- Secure password hashing.
+- Short-lived tokens.
+- Refresh-token rotation.
+- MFA support.
+- Role-based authorisation.
+- Tenant isolation.
+- Rate limiting.
+- Input validation.
+- SQL injection protection.
+- Secure object storage.
+- Signed EA package downloads.
+- EA package checksum verification.
+- Installation-specific authentication.
+- Replay protection.
+- Command expiry.
+- Configuration versioning.
+- Audit logging.
+- Secret rotation.
+- Backup and recovery.
+- Security monitoring.
+
+EA package access must be checked against current licence entitlements.
+
+Never expose private ".mq5" source code through the public marketplace unless explicitly authorised by the product owner.
+
+Compiled ".ex5" files should be distributed securely, but do not claim that compiled files are impossible to reverse engineer.
+
+---
+
+27. TESTING REQUIREMENTS
+
+Create automated tests for:
+
+- Registration and login.
+- Tenant isolation.
+- Multiple accounts.
+- Multiple EA products.
+- Licence activation.
+- Licence expiry.
+- Installation workflows.
+- EA compatibility.
+- Configuration validation.
+- Configuration deployment.
+- EA acknowledgement.
+- Configuration rollback.
+- Standard Mode permissions.
+- Advanced Mode permissions.
+- Protected settings.
+- Account-wide risk enforcement.
+- Remote pause and resume.
+- Offline EA behaviour.
+- VPS provisioning.
+- Billing webhooks.
+- Duplicate commands.
+- Security authorisation.
+
+Create integration tests for the Android application, backend and simulated EA bridge.
+
+Create a test mode that allows the full application to be demonstrated without a real broker connection.
+
+Clearly label all simulated data.
+
+---
+
+28. DEVELOPMENT AND DELIVERY REQUIREMENTS
+
+Do not attempt to build the entire system as one unstructured file.
+
+Build it in logical phases.
+
+Phase 1: Android foundation
+
+- Project structure.
+- Design system.
+- Navigation.
+- Authentication screens.
+- Dashboard.
+- Marketplace.
+- Accounts.
+- Profile.
+
+Phase 2: Backend foundation
+
+- FastAPI.
+- PostgreSQL.
+- Migrations.
+- Authentication.
+- Tenant isolation.
+- API contracts.
+- Admin foundations.
+
+Phase 3: EA marketplace and licensing
+
+- EA products.
+- Versions.
+- Licences.
+- Subscription architecture.
+- Purchase workflows.
+
+Phase 4: MT5 accounts and installations
+
+- Account management.
+- Customer-hosted installation.
+- Managed VPS workflow.
+- EA enrolment.
+- Heartbeats.
+
+Phase 5: EA settings and remote configuration
+
+- Dynamic parameter definitions.
+- Standard Mode.
+- Advanced Mode.
+- Presets.
+- Versioned configuration.
+- Runtime configuration bridge.
+- Acknowledgements.
+- Rollback.
+
+Phase 6: Trading dashboard and remote controls
+
+- Positions.
+- Orders.
+- Trade history.
+- Charts.
+- Pause.
+- Resume.
+- Stop.
+- Emergency stop.
+- Risk management.
+
+Phase 7: Security and production preparation
+
+- Security tests.
+- Performance tests.
+- Monitoring.
+- Backups.
+- Deployment documentation.
+- Legal and operational readiness checklist.
+
+For every phase:
+
+1. Produce complete code for the relevant modules.
+2. Explain files and dependencies.
+3. Implement real state management.
+4. Implement backend integration where available.
+5. Include loading, empty, error and offline states.
+6. Include validation.
+7. Provide tests.
+8. Identify external credentials or services still required.
+9. Do not claim incomplete functionality is production-ready.
+
+---
+
+29. IMPORTANT IMPLEMENTATION INSTRUCTIONS
+
+Do not replace the real backend with hardcoded demo data without labelling it.
+
+Do not create buttons that appear functional but have no action.
+
+Do not show successful installation until the installation agent or EA confirms it.
+
+Do not show an EA as running without actual runtime confirmation.
+
+Do not display remote configuration as applied before acknowledgement.
+
+Do not allow configuration changes to bypass risk limits.
+
+Do not assume all EAs have identical inputs.
+
+Do not assume every MT5 broker uses the same XAUUSD symbol name. Support broker-specific symbols and symbol mapping.
+
+Do not assume every EA can run simultaneously on the same account.
+
+Do not rewrite the existing EA trading strategy when integrating the bridge.
+
+Do not create duplicate MQL5 event handlers.
+
+Do not put broker passwords in ordinary Android storage or backend database fields.
+
+Keep demo and live environments strictly separated.
+
+All external services must be configurable through environment variables and secure configuration.
+
+Use clean architecture, reusable components, modular code and production-oriented error handling.
+
+---
+
+30. FIRST BUILD INSTRUCTION
+
+Start by generating the complete Android application foundation and its backend architecture.
+
+First deliver:
+
+1. System architecture.
+2. Android project structure.
+3. Backend project structure.
+4. Database schema.
+5. API contract.
+6. Design system.
+7. Navigation.
+8. Authentication.
+9. Home dashboard.
+10. EA marketplace.
+11. MT5 account management.
+12. EA settings screen with Standard and Advanced modes.
+
+Then continue with the remaining phases in order.
+
+If a required external integration is not yet available, create a clearly labelled integration interface and a working demo implementation that can later be replaced by the real service.
+
+Do not stop after producing a visual prototype.
+
+Build the actual application structure and working features wherever the required services and credentials are available.
+
+The final objective is a scalable commercial Android platform through which customers can purchase, install, configure, control and monitor multiple MT5 Expert Advisors across multiple MT5 accounts, using either their own hosting or XAU Pilot managed VPS infrastructure.

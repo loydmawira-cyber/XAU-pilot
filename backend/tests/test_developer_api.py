@@ -1,0 +1,214 @@
+"""End-to-end API tests (FastAPI TestClient + SQLite).
+Run from the repo root after `pip install -r backend/requirements.txt httpx`:
+    python -m unittest backend.tests.test_developer_api -v
+"""
+import io
+import json
+import os
+import tempfile
+import unittest
+
+_TMP = tempfile.mkdtemp()
+os.environ["DATABASE_URL"] = f"sqlite:///{_TMP}/test.db"
+os.environ["EA_STORAGE_DIR"] = f"{_TMP}/packages"
+os.environ["MANIFEST_SIGNING_KEY"] = "s" * 48
+os.environ["JWT_SECRET"] = "j" * 48
+
+from fastapi.testclient import TestClient  # noqa: E402
+
+from backend.app.database import Base, SessionLocal, engine  # noqa: E402
+from backend.app.main import app  # noqa: E402
+from backend.app.models import EaLicense, EaBinaryPackage, User  # noqa: E402
+
+API = "/api/v1"
+EX5 = b"\x7fEX5-binary-bytes" * 8
+
+
+def manifest(product_id, dev_id, version="1.0.0"):
+    return {
+        "schema_version": "1.0", "ea_product_id": product_id, "ea_version": version,
+        "developer_id": dev_id,
+        "parameters": [
+            {"key": "lot_size", "label": "Lot Size", "type": "decimal", "default": 0.01,
+             "minimum": 0.01, "maximum": 1.0, "step": 0.01, "unit": "lots",
+             "visible_to_customer": True, "customer_editable": True},
+            {"key": "hidden_edge", "label": "Edge", "type": "integer", "default": 3,
+             "visible_to_customer": False, "customer_editable": False},
+        ],
+    }
+
+
+class DeveloperApiTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        Base.metadata.drop_all(bind=engine)
+        Base.metadata.create_all(bind=engine)
+        cls.c = TestClient(app)
+
+    def user(self, email, role=None):
+        r = self.c.post(f"{API}/auth/register",
+                        json={"email": email, "password": "Passw0rd!x", "full_name": email.split("@")[0]})
+        self.assertEqual(r.status_code, 200, r.text)
+        body = r.json()
+        if role:
+            with SessionLocal() as db:
+                db.query(User).filter(User.id == body["user"]["id"]).update({"role": role})
+                db.commit()
+            body = self.c.post(f"{API}/auth/login", json={"email": email, "password": "Passw0rd!x"}).json()
+        return {"id": body["user"]["id"], "tenant": body["user"]["tenantId"],
+                "h": {"Authorization": f"Bearer {body['accessToken']}"}}
+
+    def developer(self, email):
+        u = self.user(email)
+        r = self.c.post(f"{API}/developer/register", headers=u["h"],
+                        json={"display_name": "Dev " + email, "contact_email": email})
+        self.assertEqual(r.status_code, 201, r.text)
+        return u
+
+    def product(self, dev, code):
+        r = self.c.post(f"{API}/developer/ea-products", headers=dev["h"], json={
+            "product_code": code, "name": "Gold " + code, "description": "A gold scalper EA for XAUUSD.",
+            "strategy_category": "Scalper", "risk_disclosures": "Trading is risky; test on demo first.",
+            "monthly_price_usd": 49, "annual_price_usd": 490, "lifetime_price_usd": 1200})
+        self.assertEqual(r.status_code, 201, r.text)
+        return r.json()
+
+    def version(self, dev, pid, ver="1.0.0"):
+        r = self.c.post(f"{API}/developer/ea-products/{pid}/versions", headers=dev["h"], json={"version": ver})
+        self.assertEqual(r.status_code, 201, r.text)
+        return r.json()["id"]
+
+    def upload(self, dev, pid, vid, man):
+        base = f"{API}/developer/ea-products/{pid}/versions/{vid}"
+        r1 = self.c.post(f"{base}/upload-binary", headers=dev["h"], files={"file": ("gold.ex5", io.BytesIO(EX5))})
+        r2 = self.c.post(f"{base}/upload-manifest", headers=dev["h"],
+                         files={"file": ("m.json", io.BytesIO(json.dumps(man).encode()))})
+        # Unit-test fixture: simulate a configured scanner returning CLEAN.
+        # Production publication still requires an actual scanner result.
+        if r1.status_code == 200:
+            with SessionLocal() as db:
+                db.query(EaBinaryPackage).filter(EaBinaryPackage.version_id == vid).update({"scan_status": "CLEAN"})
+                db.commit()
+        return r1, r2
+
+    def published(self, dev, code):
+        p = self.product(dev, code)
+        vid = self.version(dev, p["id"])
+        r1, r2 = self.upload(dev, p["id"], vid, manifest(p["id"], dev["id"]))
+        self.assertEqual(r1.status_code, 200, r1.text)
+        self.assertTrue(r2.json()["manifest"]["is_valid"], r2.text)
+        r = self.c.post(f"{API}/developer/ea-products/{p['id']}/versions/{vid}/publish", headers=dev["h"])
+        self.assertEqual(r.status_code, 200, r.text)
+        return p, vid
+
+    # ---- ownership / roles
+    def test_developer_cannot_touch_another_developers_product(self):
+        a, b = self.developer("a1@x.com"), self.developer("b1@x.com")
+        p = self.product(a, "OWNA1")
+        self.assertEqual(self.c.get(f"{API}/developer/ea-products/{p['id']}", headers=b["h"]).status_code, 404)
+        r = self.c.post(f"{API}/developer/ea-products/{p['id']}/versions", headers=b["h"], json={"version": "1.0.0"})
+        self.assertEqual(r.status_code, 404)
+
+    def test_customer_cannot_use_developer_endpoints(self):
+        cust = self.user("cust1@x.com")
+        self.assertEqual(self.c.get(f"{API}/developer/ea-products", headers=cust["h"]).status_code, 403)
+        self.assertEqual(self.c.post(f"{API}/developer/ea-products/x/versions/y/upload-binary", headers=cust["h"],
+                                     files={"file": ("a.ex5", io.BytesIO(EX5))}).status_code, 403)
+
+    def test_unauthenticated_rejected(self):
+        self.assertEqual(self.c.get(f"{API}/developer/ea-products").status_code, 401)
+
+    def test_admin_cannot_edit_developer_manifest(self):
+        dev, admin = self.developer("d2@x.com"), self.user("adm2@x.com", role="SUPER_ADMINISTRATOR")
+        p = self.product(dev, "ADM02")
+        vid = self.version(dev, p["id"])
+        base = f"{API}/developer/ea-products/{p['id']}/versions/{vid}"
+        r = self.c.post(f"{base}/upload-manifest", headers=admin["h"],
+                        files={"file": ("m.json", io.BytesIO(b"{}"))})
+        self.assertIn(r.status_code, (403, 404))
+        self.assertEqual(self.c.post(f"{base}/publish", headers=admin["h"]).status_code, 403)
+
+    # ---- manifest + immutability
+    def test_invalid_manifest_cannot_publish(self):
+        dev = self.developer("d3@x.com")
+        p = self.product(dev, "INV03")
+        vid = self.version(dev, p["id"])
+        bad = manifest(p["id"], dev["id"])
+        bad["parameters"][0]["default"] = 99
+        r1, r2 = self.upload(dev, p["id"], vid, bad)
+        self.assertFalse(r2.json()["manifest"]["is_valid"])
+        r = self.c.post(f"{API}/developer/ea-products/{p['id']}/versions/{vid}/publish", headers=dev["h"])
+        self.assertEqual(r.status_code, 422)
+
+    def test_manifest_for_other_developer_rejected(self):
+        dev = self.developer("d4@x.com")
+        p = self.product(dev, "OTH04")
+        vid = self.version(dev, p["id"])
+        _, r2 = self.upload(dev, p["id"], vid, manifest(p["id"], "someone-else"))
+        self.assertFalse(r2.json()["manifest"]["is_valid"])
+
+    def test_published_version_is_immutable(self):
+        dev = self.developer("d5@x.com")
+        p, vid = self.published(dev, "IMM05")
+        r1, r2 = self.upload(dev, p["id"], vid, manifest(p["id"], dev["id"]))
+        self.assertEqual(r1.status_code, 409)
+        self.assertEqual(r2.status_code, 409)
+        again = self.c.post(f"{API}/developer/ea-products/{p['id']}/versions/{vid}/publish", headers=dev["h"])
+        self.assertEqual(again.status_code, 409)
+
+    def test_new_version_keeps_old_manifest(self):
+        dev = self.developer("d6@x.com")
+        p, v1 = self.published(dev, "OLD06")
+        v2 = self.version(dev, p["id"], "1.1.0")
+        m2 = manifest(p["id"], dev["id"], "1.1.0")
+        m2["parameters"].append({"key": "max_trades", "label": "Max Trades", "type": "integer", "default": 2,
+                                 "visible_to_customer": True, "customer_editable": True})
+        self.upload(dev, p["id"], v2, m2)
+        prev = self.c.get(f"{API}/developer/ea-products/{p['id']}/versions/{v1}/preview", headers=dev["h"]).json()
+        self.assertEqual([x["key"] for x in prev["parameters"]], ["lot_size"])
+
+    def test_preview_hides_hidden_parameters(self):
+        dev = self.developer("d7@x.com")
+        p, vid = self.published(dev, "PRV07")
+        prev = self.c.get(f"{API}/developer/ea-products/{p['id']}/versions/{vid}/preview", headers=dev["h"]).json()
+        self.assertNotIn("hidden_edge", json.dumps(prev))
+
+    def test_binary_validation(self):
+        dev = self.developer("d8@x.com")
+        p = self.product(dev, "BIN08")
+        vid = self.version(dev, p["id"])
+        base = f"{API}/developer/ea-products/{p['id']}/versions/{vid}"
+        r = self.c.post(f"{base}/upload-binary", headers=dev["h"], files={"file": ("gold.mq5", io.BytesIO(EX5))})
+        self.assertEqual(r.status_code, 422)
+        r = self.c.post(f"{base}/upload-binary", headers=dev["h"],
+                        files={"file": ("gold.ex5", io.BytesIO(b"#property copyright"))})
+        self.assertEqual(r.status_code, 422)
+
+    # ---- review, downloads
+    def test_admin_review_cannot_change_manifest_but_can_list(self):
+        dev, admin = self.developer("d9@x.com"), self.user("adm9@x.com", role="ADMINISTRATOR")
+        p, vid = self.published(dev, "REV09")
+        self.c.post(f"{API}/developer/ea-products/{p['id']}/submit-for-review", headers=dev["h"])
+        self.assertEqual(self.c.post(f"{API}/admin/ea-review/{p['id']}/approve", headers=dev["h"]).status_code, 403)
+        self.assertEqual(self.c.post(f"{API}/admin/ea-review/{p['id']}/approve", headers=admin["h"]).status_code, 200)
+
+    def test_download_requires_licence(self):
+        dev, cust = self.developer("d10@x.com"), self.user("c10@x.com")
+        admin = self.user("adm10@x.com", role="ADMINISTRATOR")
+        p, vid = self.published(dev, "DL010")
+        self.c.post(f"{API}/developer/ea-products/{p['id']}/submit-for-review", headers=dev["h"])
+        self.c.post(f"{API}/admin/ea-review/{p['id']}/approve", headers=admin["h"])
+        url = f"{API}/ea-products/{p['id']}/versions/{vid}/download"
+        self.assertEqual(self.c.get(url, headers=cust["h"]).status_code, 403)
+        with SessionLocal() as db:
+            db.add(EaLicense(tenant_id=cust["tenant"], ea_product_id=p["id"], license_key_hash="h",
+                             license_key_masked="XXXX", license_type="LIFETIME", status="ACTIVE"))
+            db.commit()
+        ok = self.c.get(url, headers=cust["h"])
+        self.assertEqual(ok.status_code, 200)
+        self.assertEqual(ok.content, EX5)
+        self.assertEqual(self.c.get(url).status_code, 401)
+
+
+if __name__ == "__main__":
+    unittest.main()

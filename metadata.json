@@ -1,0 +1,6 @@
+{
+  "name": "XAU Pilot",
+  "description": "Premium Multi-EA MT5 Automated Trading Platform with remote EA inputs, VPS hosting, and risk management.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
