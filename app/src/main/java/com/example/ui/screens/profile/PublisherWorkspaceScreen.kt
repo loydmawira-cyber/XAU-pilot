@@ -181,10 +181,10 @@ fun PublisherWorkspaceScreen(viewModel: XauPilotViewModel, modifier: Modifier = 
                     OutlinedButton(onClick = { picker.launch(arrayOf("*/*")) }, modifier = Modifier.fillMaxWidth().testTag("publisher_upload_button")) {
                         Icon(Icons.Default.CloudUpload, null); Spacer(Modifier.width(8.dp)); Text(fileName ?: "Choose .ex5 file")
                     }
-                    OutlinedTextField(name, { name = it }, label = { Text("EA name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(version, { version = it }, label = { Text("Version (x.y.z)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(description, { description = it }, label = { Text("Description (at least 10 characters)") }, minLines = 3, modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(monthlyPrice, { monthlyPrice = it }, label = { Text("Monthly price (USD)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(name, { name = it }, label = { Text("EA name") }, placeholder = { Text("e.g. Gold Trend Pro") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(version, { version = it }, label = { Text("Version (x.y.z)") }, placeholder = { Text("e.g. 1.0.0") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(description, { description = it }, label = { Text("Description (at least 10 characters)") }, placeholder = { Text("Explain what your EA does and how it trades...") }, minLines = 3, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(monthlyPrice, { monthlyPrice = it }, label = { Text("Monthly price (USD)") }, placeholder = { Text("e.g. 49") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     Text("Strategy category", color = TextSecondaryDark, fontSize = 12.sp)
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         listOf("GOLD_TREND", "GOLD_SCALPING", "GOLD_BREAKOUT").forEach { item ->
@@ -249,16 +249,16 @@ fun PublisherWorkspaceScreen(viewModel: XauPilotViewModel, modifier: Modifier = 
                                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                         OutlinedTextField(
                                             value = input.minimum, onValueChange = { customerInputs[index] = input.copy(minimum = it) },
-                                            label = { Text("Minimum") }, singleLine = true, modifier = Modifier.weight(1f)
+                                            label = { Text("Minimum") }, placeholder = { Text("e.g. 0.01") }, singleLine = true, modifier = Modifier.weight(1f)
                                         )
                                         OutlinedTextField(
                                             value = input.maximum, onValueChange = { customerInputs[index] = input.copy(maximum = it) },
-                                            label = { Text("Maximum") }, singleLine = true, modifier = Modifier.weight(1f)
+                                            label = { Text("Maximum") }, placeholder = { Text("e.g. 5.00") }, singleLine = true, modifier = Modifier.weight(1f)
                                         )
                                     }
                                     OutlinedTextField(
                                         value = input.step, onValueChange = { customerInputs[index] = input.copy(step = it) },
-                                        label = { Text("Step (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth()
+                                        label = { Text("Step (optional)") }, placeholder = { Text("e.g. 0.01") }, singleLine = true, modifier = Modifier.fillMaxWidth()
                                     )
                                 }
                                 if (input.type == "enum") {
@@ -273,13 +273,14 @@ fun PublisherWorkspaceScreen(viewModel: XauPilotViewModel, modifier: Modifier = 
                                 if (input.type == "string") {
                                     OutlinedTextField(
                                         value = input.maxLength, onValueChange = { customerInputs[index] = input.copy(maxLength = it) },
-                                        label = { Text("Maximum text length") }, singleLine = true, modifier = Modifier.fillMaxWidth()
+                                        label = { Text("Maximum text length") }, placeholder = { Text("e.g. 200") }, singleLine = true, modifier = Modifier.fillMaxWidth()
                                     )
                                 }
                                 OutlinedTextField(
                                     value = input.description,
                                     onValueChange = { customerInputs[index] = input.copy(description = it) },
                                     label = { Text("Description (optional)") },
+                                    placeholder = { Text("e.g. Amount to risk on each trade") },
                                     modifier = Modifier.fillMaxWidth()
                                 )
                                 Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
