@@ -193,7 +193,7 @@ fun MainAppContent(viewModel: XauPilotViewModel) {
                 is ScreenDestination.BridgeGuide -> BridgeGuideScreen(viewModel = viewModel)
                 is ScreenDestination.PublisherWorkspace -> PublisherWorkspaceScreen(viewModel = viewModel)
                 is ScreenDestination.AdminConsole -> AdminConsoleScreen(user = authSession?.user)
-                is ScreenDestination.Support -> if (signedInRole == "SUPER_ADMINISTRATOR" || signedInRole == "ADMINISTRATOR") AdminSupportScreen(user = authSession?.user) else SupportScreen()
+                is ScreenDestination.Support -> if (signedInRole == "SUPER_ADMINISTRATOR" || signedInRole == "ADMINISTRATOR" || signedInRole == "SUPPORT_AGENT") AdminSupportScreen(user = authSession?.user) else SupportScreen()
                 else -> HomeScreen(viewModel = viewModel)
             }
         }
