@@ -151,23 +151,8 @@ fun PublisherWorkspaceScreen(viewModel: XauPilotViewModel, modifier: Modifier = 
                                             color = TextPrimaryDark, fontWeight = FontWeight.SemiBold)
                                         Text("Type: ${parameter["type"]} · Extracted default: ${parameter["default"]}",
                                             color = TextSecondaryDark, fontSize = 11.sp)
-                                        if (parameter["type"] == "boolean") {
-                                            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                                                Checkbox(
-                                                    checked = parameter["default"] == true,
-                                                    onCheckedChange = { viewModel.updatePublisherReviewParameter(index, "default", it) }
-                                                )
-                                                Text("Default value: ${parameter["default"]}", color = TextPrimaryDark, fontSize = 12.sp)
-                                            }
-                                        } else {
-                                            OutlinedTextField(
-                                                value = parameter["default_draft"]?.toString() ?: parameter["default"]?.toString().orEmpty(),
-                                                onValueChange = { viewModel.updatePublisherReviewParameter(index, "default_draft", it) },
-                                                label = { Text("Customer default value") },
-                                                modifier = Modifier.fillMaxWidth(),
-                                                singleLine = true
-                                            )
-                                        }
+                                        Text("Compiled default (from this EX5): ${parameter["default"]}. Recompile the EA to change its built-in default.",
+                                            color = TextSecondaryDark, fontSize = 11.sp)
                                         if (parameter["type"] == "integer" || parameter["type"] == "decimal") {
                                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                                 listOf("minimum", "maximum", "step").forEach { field ->
