@@ -13,6 +13,7 @@ os.environ["DATABASE_URL"] = f"sqlite:///{_TMP}/test.db"
 os.environ["EA_STORAGE_DIR"] = f"{_TMP}/packages"
 os.environ["MANIFEST_SIGNING_KEY"] = "s" * 48
 os.environ["JWT_SECRET"] = "j" * 48
+os.environ["SUPER_ADMIN_BOOTSTRAP_TOKEN"] = "bootstrap-test-token-" + ("x" * 40)
 
 from fastapi.testclient import TestClient  # noqa: E402
 
@@ -101,6 +102,41 @@ class DeveloperApiTests(unittest.TestCase):
         self.assertEqual(r.status_code, 200, r.text)
         return p, vid
 
+    def test_00_first_super_admin_bootstrap_is_one_time_and_secure(self):
+        url = f"{API}/auth/bootstrap-super-admin"
+        payload = {"email": "owner@xaupilot.test", "password": "A-Strong-Admin-Password-2026!", "full_name": "Platform Owner"}
+        self.assertEqual(self.c.post(url, json=payload).status_code, 403)
+        self.assertEqual(self.c.post(url, json=payload, headers={"X-Admin-Bootstrap-Token": "wrong"}).status_code, 403)
+        created = self.c.post(url, json=payload, headers={"X-Admin-Bootstrap-Token": os.environ["SUPER_ADMIN_BOOTSTRAP_TOKEN"]})
+        self.assertEqual(created.status_code, 201, created.text)
+        self.assertEqual(created.json()["user"]["role"], "SUPER_ADMINISTRATOR")
+        again = self.c.post(url, json=payload, headers={"X-Admin-Bootstrap-Token": os.environ["SUPER_ADMIN_BOOTSTRAP_TOKEN"]})
+        self.assertEqual(again.status_code, 409)
+        ordinary = self.c.post(f"{API}/auth/register", json={"email": "ordinary@xaupilot.test", "password": "Passw0rd!x", "full_name": "Ordinary User"})
+        self.assertEqual(ordinary.status_code, 200)
+        self.assertEqual(ordinary.json()["user"]["role"], "CUSTOMER")
+
+    def test_01_super_admin_can_create_only_one_restricted_admin(self):
+        login = self.c.post(f"{API}/auth/login", json={
+            "email": "owner@xaupilot.test", "password": "A-Strong-Admin-Password-2026!"
+        })
+        self.assertEqual(login.status_code, 200, login.text)
+        super_headers = {"Authorization": f"Bearer {login.json()['accessToken']}"}
+        payload = {"email": "operations@xaupilot.test", "password": "Another-Strong-Password-2026!", "full_name": "Operations Admin"}
+        created = self.c.post(f"{API}/auth/admin-users", headers=super_headers, json=payload)
+        self.assertEqual(created.status_code, 201, created.text)
+        self.assertEqual(created.json()["role"], "ADMINISTRATOR")
+        duplicate = self.c.post(f"{API}/auth/admin-users", headers=super_headers, json={**payload, "email": "second@xaupilot.test"})
+        self.assertEqual(duplicate.status_code, 409, duplicate.text)
+        admin_login = self.c.post(f"{API}/auth/login", json={"email": payload["email"], "password": payload["password"]})
+        self.assertEqual(admin_login.status_code, 200, admin_login.text)
+        admin_headers = {"Authorization": f"Bearer {admin_login.json()['accessToken']}"}
+        forbidden = self.c.post(f"{API}/auth/admin-users", headers=admin_headers, json={**payload, "email": "third@xaupilot.test"})
+        self.assertEqual(forbidden.status_code, 403, forbidden.text)
+        customer = self.c.post(f"{API}/auth/register", json={"email": "normal@xaupilot.test", "password": "Passw0rd!x", "full_name": "Normal Customer"})
+        self.assertEqual(customer.status_code, 200)
+        self.assertEqual(customer.json()["user"]["role"], "CUSTOMER")
+
     # ---- ownership / roles
     def test_developer_cannot_touch_another_developers_product(self):
         a, b = self.developer("a1@x.com"), self.developer("b1@x.com")
@@ -119,7 +155,7 @@ class DeveloperApiTests(unittest.TestCase):
         self.assertEqual(self.c.get(f"{API}/developer/ea-products").status_code, 401)
 
     def test_admin_cannot_edit_developer_manifest(self):
-        dev, admin = self.developer("d2@x.com"), self.user("adm2@x.com", role="SUPER_ADMINISTRATOR")
+        dev, admin = self.developer("d2@x.com"), self.user("adm2@x.com", role="ADMINISTRATOR")
         p = self.product(dev, "ADM02")
         vid = self.version(dev, p["id"])
         base = f"{API}/developer/ea-products/{p['id']}/versions/{vid}"
