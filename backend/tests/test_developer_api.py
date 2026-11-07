@@ -19,7 +19,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 from backend.app.database import Base, SessionLocal, engine  # noqa: E402
 from backend.app.main import app  # noqa: E402
-from backend.app.models import EaLicense, EaBinaryPackage, User  # noqa: E402
+from backend.app.models import EaLicense, EaBinaryPackage, EaExtractionJob, User  # noqa: E402
 
 API = "/api/v1"
 EX5 = b"\x7fEX5-binary-bytes" * 8
@@ -98,6 +98,14 @@ class DeveloperApiTests(unittest.TestCase):
         r1, r2 = self.upload(dev, p["id"], vid, manifest(p["id"], dev["id"]))
         self.assertEqual(r1.status_code, 200, r1.text)
         self.assertTrue(r2.json()["manifest"]["is_valid"], r2.text)
+        # Fixture: simulate a completed extraction for tests that need a published EA.
+        with SessionLocal() as db:
+            binary = db.query(EaBinaryPackage).filter(EaBinaryPackage.version_id == vid).one()
+            job = db.query(EaExtractionJob).filter(EaExtractionJob.version_id == vid).one()
+            job.status = "COMPLETE"
+            job.binary_sha256 = binary.sha256
+            job.result_json = json.dumps({"inputs": [], "unresolved": []})
+            db.commit()
         r = self.c.post(f"{API}/developer/ea-products/{p['id']}/versions/{vid}/publish", headers=dev["h"])
         self.assertEqual(r.status_code, 200, r.text)
         return p, vid
