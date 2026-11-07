@@ -99,24 +99,6 @@ fun AdminConsoleScreen(user: User?) {
                     Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(12.dp)) { Text(u["full_name"].toString()); Text(u["email"].toString(), style = MaterialTheme.typography.bodySmall); Text("${u["role"]} · ${if (u["is_active"] == true) "Active" else "Inactive"}", style = MaterialTheme.typography.bodySmall) } }
                 }
             }
-            item { Divider(); Text("EA owner support inbox", style = MaterialTheme.typography.titleLarge); Text("Messages are stored on the server and visible only to the conversation owner and platform support staff.", style = MaterialTheme.typography.bodySmall) }
-            if (conversations.isEmpty()) item { Text("No support conversations yet.") }
-            items(conversations, key = { "c_" + it["id"].toString() }) { c ->
-                val id = c["id"].toString()
-                Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(c["subject"].toString(), style = MaterialTheme.typography.titleMedium)
-                    Text("${c["owner_name"]} · ${c["owner_email"]} · ${c["status"]}", style = MaterialTheme.typography.bodySmall)
-                    TextButton(onClick = { selectedConversation = id; loadConversation(id) }) { Text(if (selectedConversation == id) "Refresh thread" else "Open conversation") }
-                    if (selectedConversation == id) {
-                        messages.forEach { m -> Text("${m["sender_name"]}: ${m["body"]}", style = MaterialTheme.typography.bodyMedium) }
-                        OutlinedTextField(reply, { reply = it }, label = { Text("Reply to EA owner") }, modifier = Modifier.fillMaxWidth())
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Button(onClick = { scope.launch { val r = ApiClient.apiService.sendSupportMessage(id, mapOf("body" to reply)); message = if (r.isSuccessful) { reply = ""; loadConversation(id); "Reply sent." } else "Reply failed (${r.code()})." } }, enabled = reply.isNotBlank()) { Text("Send reply") }
-                            OutlinedButton(onClick = { scope.launch { val r = ApiClient.apiService.setSupportStatus(id, mapOf("status" to if (c["status"] == "CLOSED") "OPEN" else "CLOSED")); message = if (r.isSuccessful) "Conversation status updated." else "Status update failed."; loadAll() } }) { Text(if (c["status"] == "CLOSED") "Reopen" else "Close") }
-                        }
-                    }
-                } }
-            }
         }
     }
 }
