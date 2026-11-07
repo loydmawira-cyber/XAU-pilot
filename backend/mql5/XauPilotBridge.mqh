@@ -57,12 +57,14 @@ string   XauPilot_ActiveSession        = "LONDON_NY";
 // Forward declarations
 bool XauPilot_CheckLicense();
 void XauPilot_StartTimer();
+void XauPilot_OnTimer();
 void XauPilot_SendStatus();
 void XauPilot_ProcessCommands();
 void XauPilot_AcknowledgeCommand(const string cmd_id, const string status, const string err_msg = "");
 void XauPilot_LoadConfiguration();
 void XauPilot_AcknowledgeConfiguration(const int version, const string status, const string reason = "");
 void XauPilot_SendPositions();
+void XauPilot_SendPerformanceSnapshot();
 bool XauPilot_ValidateParameters(double lot, int sl, int tp, string &out_error);
 int  XauPilot_HttpPost(const string endpoint, const string json_body, string &out_response);
 int  XauPilot_HttpGet(const string endpoint, string &out_response);
@@ -130,6 +132,7 @@ void XauPilot_OnTimer() {
 
    // 4. Send Open Positions Snapshot
    XauPilot_SendPositions();
+   XauPilot_SendPerformanceSnapshot();
 }
 
 //+------------------------------------------------------------------+
@@ -364,24 +367,57 @@ void XauPilot_ReportTradeEvent(const MqlTradeTransaction &trans,
                               const MqlTradeRequest &request,
                               const MqlTradeResult &result)
 {
-   if(trans.type == TRADE_TRANSACTION_DEAL_ADD) {
-      if(HistoryDealSelect(trans.deal)) {
-         long magic = HistoryDealGetInteger(trans.deal, DEAL_MAGIC);
-         if(magic == (long)g_xau_config.magic_number) {
-            string payload = StringFormat("{\"installation_id\":\"%s\",\"magic_number\":%I64u,\"ticket\":%I64u,\"deal_type\":\"%s\",\"volume\":%.2f,\"price\":%.2f,\"profit\":%.2f,\"comment\":\"%s\"}",
-                                          g_xau_config.installation_id,
-                                          magic,
-                                          trans.deal,
-                                          (HistoryDealGetInteger(trans.deal, DEAL_TYPE) == DEAL_TYPE_BUY ? "BUY" : "SELL"),
-                                          HistoryDealGetDouble(trans.deal, DEAL_VOLUME),
-                                          HistoryDealGetDouble(trans.deal, DEAL_PRICE),
-                                          HistoryDealGetDouble(trans.deal, DEAL_PROFIT),
-                                          HistoryDealGetString(trans.deal, DEAL_COMMENT));
-            string resp;
-            XauPilot_HttpPost("/ea/v1/trades/event", payload, resp);
-         }
+   if(trans.type != TRADE_TRANSACTION_DEAL_ADD || !HistoryDealSelect(trans.deal)) return;
+   if(HistoryDealGetInteger(trans.deal, DEAL_MAGIC) != (long)g_xau_config.magic_number) return;
+   long entry = HistoryDealGetInteger(trans.deal, DEAL_ENTRY);
+   if(entry != DEAL_ENTRY_OUT && entry != DEAL_ENTRY_OUT_BY && entry != DEAL_ENTRY_INOUT) return;
+
+   long position_id = HistoryDealGetInteger(trans.deal, DEAL_POSITION_ID);
+   // Wait until the position is fully closed so partial exits are not double-counted.
+   for(int i = 0; i < PositionsTotal(); i++) {
+      ulong position_ticket = PositionGetTicket(i);
+      if(PositionGetInteger(POSITION_IDENTIFIER) == position_id) return;
+   }
+
+   if(!HistorySelectByPosition(position_id)) return;
+   double total_profit = 0.0, total_commission = 0.0, total_swap = 0.0;
+   double exit_volume = 0.0, weighted_exit_value = 0.0;
+   string direction = "BUY";
+   int deals = HistoryDealsTotal();
+   for(int i = 0; i < deals; i++) {
+      ulong deal = HistoryDealGetTicket(i);
+      if(deal == 0) continue;
+      total_profit += HistoryDealGetDouble(deal, DEAL_PROFIT);
+      total_commission += HistoryDealGetDouble(deal, DEAL_COMMISSION);
+      total_swap += HistoryDealGetDouble(deal, DEAL_SWAP);
+      long deal_entry = HistoryDealGetInteger(deal, DEAL_ENTRY);
+      long deal_type = HistoryDealGetInteger(deal, DEAL_TYPE);
+      if(deal_entry == DEAL_ENTRY_IN) direction = (deal_type == DEAL_TYPE_BUY ? "BUY" : "SELL");
+      if(deal_entry == DEAL_ENTRY_OUT || deal_entry == DEAL_ENTRY_OUT_BY || deal_entry == DEAL_ENTRY_INOUT) {
+         double vol = HistoryDealGetDouble(deal, DEAL_VOLUME);
+         exit_volume += vol;
+         weighted_exit_value += vol * HistoryDealGetDouble(deal, DEAL_PRICE);
       }
    }
+   double avg_exit_price = exit_volume > 0.0 ? weighted_exit_value / exit_volume : HistoryDealGetDouble(trans.deal, DEAL_PRICE);
+   string payload = StringFormat("{\"installation_id\":\"%s\",\"deal_ticket\":%I64u,\"position_id\":%I64d,\"symbol\":\"%s\",\"direction\":\"%s\",\"volume\":%.2f,\"close_price\":%.8f,\"profit\":%.2f,\"commission\":%.2f,\"swap\":%.2f,\"currency\":\"%s\",\"closed_at_epoch\":%I64d}",
+      g_xau_config.installation_id, trans.deal, position_id, HistoryDealGetString(trans.deal, DEAL_SYMBOL),
+      direction, exit_volume, avg_exit_price, total_profit, total_commission, total_swap,
+      AccountInfoString(ACCOUNT_CURRENCY), HistoryDealGetInteger(trans.deal, DEAL_TIME));
+   string resp;
+   XauPilot_HttpPost("/ea/v1/performance/trade", payload, resp);
+}
+
+//+------------------------------------------------------------------+
+//| Send a balance/equity sample for public track record analytics   |
+//+------------------------------------------------------------------+
+void XauPilot_SendPerformanceSnapshot()
+{
+   string payload = StringFormat("{\"installation_id\":\"%s\",\"balance\":%.2f,\"equity\":%.2f,\"currency\":\"%s\",\"captured_at_epoch\":%I64d}",
+      g_xau_config.installation_id, AccountInfoDouble(ACCOUNT_BALANCE), AccountInfoDouble(ACCOUNT_EQUITY),
+      AccountInfoString(ACCOUNT_CURRENCY), TimeCurrent());
+   string resp;
+   XauPilot_HttpPost("/ea/v1/performance/snapshot", payload, resp);
 }
 
 //+------------------------------------------------------------------+
