@@ -1,21 +1,121 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Header
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 import uuid
+import secrets
+from sqlalchemy.exc import IntegrityError
 
 from backend.app.database import get_db
 from backend.app.models import User, Tenant, RevokedToken, AuditLog
 from backend.app.schemas import (
     UserRegisterRequest, UserLoginRequest, TokenRefreshRequest,
-    TokenResponse, UserResponse, TenantResponse
+    TokenResponse, UserResponse, TenantResponse, SuperAdminBootstrapRequest,
+    RestrictedAdminCreateRequest
 )
 from backend.app.security import (
     hash_password, verify_password, create_access_token,
     create_refresh_token, decode_token, password_needs_rehash
 )
-from backend.app.dependencies import get_current_user, get_current_tenant, get_token_from_header
+from backend.app.dependencies import get_current_user, get_current_tenant, get_token_from_header, require_roles
+from backend.app.config import settings
 
 router = APIRouter(prefix="", tags=["Authentication"])
+
+
+@router.post("/auth/bootstrap-super-admin", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
+def bootstrap_super_admin(
+    req: SuperAdminBootstrapRequest,
+    x_admin_bootstrap_token: str = Header("", alias="X-Admin-Bootstrap-Token"),
+    db: Session = Depends(get_db),
+):
+    """Create the platform's first Super Admin exactly once using a deployment secret."""
+    configured_token = settings.SUPER_ADMIN_BOOTSTRAP_TOKEN
+    if len(configured_token) < 32:
+        raise HTTPException(status_code=503, detail="Super Admin bootstrap is not configured")
+    if not secrets.compare_digest(x_admin_bootstrap_token, configured_token):
+        raise HTTPException(status_code=403, detail="Invalid bootstrap credential")
+    if db.query(User).filter(User.role == "SUPER_ADMINISTRATOR").first():
+        raise HTTPException(status_code=409, detail="The initial Super Admin has already been created")
+
+    email = req.email.lower().strip()
+    if db.query(User).filter(User.email == email).first():
+        raise HTTPException(status_code=409, detail="An account with this email already exists")
+
+    tenant = Tenant(name=f"{req.full_name}'s XAU Pilot Admin", plan="Platform Administration")
+    db.add(tenant)
+    db.flush()
+    user = User(
+        tenant_id=tenant.id, email=email, password_hash=hash_password(req.password),
+        full_name=req.full_name.strip(), role="SUPER_ADMINISTRATOR", mfa_enabled=False,
+    )
+    db.add(user)
+    db.flush()
+    db.add(AuditLog(
+        tenant_id=tenant.id, user_id=user.id, action="INITIAL_SUPER_ADMIN_CREATED",
+        target_type="USER", target_id=user.id, details='{"method":"one_time_bootstrap"}',
+    ))
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="The initial Super Admin has already been created")
+    db.refresh(user)
+    token_data = {"sub": user.id, "tenant_id": tenant.id, "role": user.role}
+    return TokenResponse(
+        accessToken=create_access_token(token_data), refreshToken=create_refresh_token(token_data),
+        tokenType="Bearer", expiresIn=86400,
+        user=UserResponse(
+            id=user.id, email=user.email, fullName=user.full_name, role=user.role,
+            tenantId=user.tenant_id, mfaEnabled=user.mfa_enabled,
+            createdAt=user.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+        ),
+    )
+
+
+@router.post("/auth/admin-users", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+def create_restricted_admin(
+    req: RestrictedAdminCreateRequest,
+    current_user: User = Depends(require_roles(["SUPER_ADMINISTRATOR"])),
+    db: Session = Depends(get_db),
+):
+    """Allow the Super Admin to create one restricted operational administrator."""
+    if db.query(User).filter(User.role == "ADMINISTRATOR").first():
+        raise HTTPException(status_code=409, detail="The restricted administrator account already exists")
+
+    email = req.email.lower().strip()
+    if db.query(User).filter(User.email == email).first():
+        raise HTTPException(status_code=409, detail="An account with this email already exists")
+
+    admin = User(
+        tenant_id=current_user.tenant_id,
+        email=email,
+        password_hash=hash_password(req.password),
+        full_name=req.full_name.strip(),
+        role="ADMINISTRATOR",
+        mfa_enabled=False,
+    )
+    db.add(admin)
+    db.flush()
+    db.add(AuditLog(
+        tenant_id=current_user.tenant_id,
+        user_id=current_user.id,
+        action="RESTRICTED_ADMIN_CREATED",
+        target_type="USER",
+        target_id=admin.id,
+        details='{"role":"ADMINISTRATOR"}',
+    ))
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Could not create the restricted administrator")
+    db.refresh(admin)
+    return UserResponse(
+        id=admin.id, email=admin.email, fullName=admin.full_name, role=admin.role,
+        tenantId=admin.tenant_id, mfaEnabled=admin.mfa_enabled,
+        createdAt=admin.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+    )
+
 
 @router.post("/auth/register", response_model=TokenResponse)
 def register(req: UserRegisterRequest, db: Session = Depends(get_db)):
