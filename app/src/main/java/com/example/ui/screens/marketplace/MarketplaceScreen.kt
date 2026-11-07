@@ -32,6 +32,7 @@ fun MarketplaceScreen(
 ) {
     val eaProducts by viewModel.eaProducts.collectAsState()
     val licenses by viewModel.licenses.collectAsState()
+    val isGuestMode by viewModel.isGuestMode.collectAsState()
 
     var searchQuery by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf<StrategyCategory?>(null) }
@@ -276,14 +277,14 @@ fun MarketplaceScreen(
 
                         if (!hasActiveLicense) {
                             Button(
-                                onClick = { selectedProductForPurchase = ea },
+                                onClick = { if (isGuestMode) viewModel.leaveGuestMode() else selectedProductForPurchase = ea },
                                 colors = ButtonDefaults.buttonColors(containerColor = GoldPrimary),
                                 shape = RoundedCornerShape(10.dp),
                                 modifier = Modifier
                                     .weight(1f)
                                     .testTag("buy_license_${ea.id}")
                             ) {
-                                Text("Get License", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = CharcoalBackground)
+                                Text(if (isGuestMode) "Sign in to license" else "Get License", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = CharcoalBackground)
                             }
                         } else {
                             Button(
@@ -322,6 +323,31 @@ fun MarketplaceScreen(
                     Text("Product Code: ${ea.productCode} • Version ${ea.currentVersion}", fontSize = 12.sp, color = TextSecondaryDark)
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(ea.description, fontSize = 13.sp, color = TextPrimaryDark)
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Public performance panel: never invent figures. Verified statistics
+                    // appear here only after the owner's MT5 account has supplied data.
+                    Surface(
+                        color = CharcoalSurfaceVariant,
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, CharcoalCardBorder),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text("OWNER MT5 PERFORMANCE", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = GoldLight)
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text("Verified track record not available yet", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = TextPrimaryDark)
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                "Profitability, equity curve, win rate and drawdown will be shown here after the EA owner connects the account running this EA and XAU Pilot verifies its MT5 trading history. No sample or estimated figures are displayed.",
+                                fontSize = 11.sp,
+                                lineHeight = 16.sp,
+                                color = TextSecondaryDark
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text("Source required: EA owner's connected MT5 account • Live/demo status and reporting period will be identified", fontSize = 10.sp, color = GoldLight)
+                        }
+                    }
                     Spacer(modifier = Modifier.height(12.dp))
 
                     Text("Release Notes", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = GoldLight)
@@ -346,11 +372,11 @@ fun MarketplaceScreen(
                     onClick = {
                         val eaToBuy = ea
                         selectedProductForDetail = null
-                        selectedProductForPurchase = eaToBuy
+                        if (isGuestMode) viewModel.leaveGuestMode() else selectedProductForPurchase = eaToBuy
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = GoldPrimary)
                 ) {
-                    Text("Pricing Plans", color = CharcoalBackground, fontWeight = FontWeight.Bold)
+                    Text(if (isGuestMode) "Sign in to continue" else "Pricing Plans", color = CharcoalBackground, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
