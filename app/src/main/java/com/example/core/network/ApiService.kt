@@ -12,6 +12,8 @@ interface ApiService {
     @POST("developer/register") suspend fun registerDeveloper(@Body body: Map<String, String>): Response<Map<String, Any>>
     @POST("developer/ea-products") suspend fun createDeveloperEaProduct(@Body body: Map<String, Any>): Response<Map<String, Any>>
     @GET("developer/ea-products") suspend fun getDeveloperEaProducts(): Response<List<Map<String, Any?>>>
+    @POST("developer/ea-products/{productId}/performance-account") suspend fun connectPublisherPerformanceAccount(@Path("productId") productId: String, @Body body: Map<String, Any>): Response<Map<String, Any?>>
+    @POST("developer/ea-products/{productId}/performance-account/rotate-token") suspend fun rotatePublisherPerformanceToken(@Path("productId") productId: String): Response<Map<String, Any?>>
     @POST("developer/ea-products/{productId}/versions") suspend fun createDeveloperEaVersion(@Path("productId") productId: String, @Body body: Map<String, String>): Response<Map<String, Any?>>
     @Multipart @POST("developer/ea-products/{productId}/versions/{versionId}/upload-binary") suspend fun uploadDeveloperEaBinary(@Path("productId") productId: String, @Path("versionId") versionId: String, @Part file: MultipartBody.Part): Response<Map<String, Any?>>
     @Multipart @POST("developer/ea-products/{productId}/versions/{versionId}/upload-manifest") suspend fun uploadDeveloperEaManifest(@Path("productId") productId: String, @Path("versionId") versionId: String, @Part file: MultipartBody.Part): Response<Map<String, Any?>>
@@ -64,6 +66,10 @@ interface ApiService {
 
     @GET("ea-products/{id}")
     suspend fun getEaProduct(@Path("id") id: String): Response<EaProduct>
+
+    // Public guest-readable EA performance feed; returns real owner MT5 telemetry only.
+    @GET("marketplace/ea-products/{id}/performance")
+    suspend fun getEaPublicPerformance(@Path("id") id: String): Response<Map<String, Any?>>
 
     // EA Licensing
     @GET("ea-licenses")
