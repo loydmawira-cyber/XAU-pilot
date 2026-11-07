@@ -1,3 +1,4 @@
+
 from fastapi import APIRouter, Depends, HTTPException, status, Header
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
@@ -16,7 +17,9 @@ from backend.app.security import (
     hash_password, verify_password, create_access_token,
     create_refresh_token, decode_token, password_needs_rehash
 )
-from backend.app.dependencies import get_current_user, get_current_tenant, get_token_from_header, require_roles
+from backend.app.dependencies import (
+    get_current_user, get_current_tenant, get_token_from_header, require_roles
+)
 from backend.app.config import settings
 
 router = APIRouter(prefix="", tags=["Authentication"])
@@ -32,8 +35,10 @@ def bootstrap_super_admin(
     configured_token = settings.SUPER_ADMIN_BOOTSTRAP_TOKEN
     if len(configured_token) < 32:
         raise HTTPException(status_code=503, detail="Super Admin bootstrap is not configured")
+
     if not secrets.compare_digest(x_admin_bootstrap_token, configured_token):
         raise HTTPException(status_code=403, detail="Invalid bootstrap credential")
+
     if db.query(User).filter(User.role == "SUPER_ADMINISTRATOR").first():
         raise HTTPException(status_code=409, detail="The initial Super Admin has already been created")
 
@@ -41,32 +46,61 @@ def bootstrap_super_admin(
     if db.query(User).filter(User.email == email).first():
         raise HTTPException(status_code=409, detail="An account with this email already exists")
 
-    tenant = Tenant(name=f"{req.full_name}'s XAU Pilot Admin", plan="Platform Administration")
+    tenant = Tenant(
+        name=f"{req.full_name}'s XAU Pilot Admin",
+        plan="Platform Administration"
+    )
     db.add(tenant)
     db.flush()
+
     user = User(
-        tenant_id=tenant.id, email=email, password_hash=hash_password(req.password),
-        full_name=req.full_name.strip(), role="SUPER_ADMINISTRATOR", mfa_enabled=False,
+        tenant_id=tenant.id,
+        email=email,
+        password_hash=hash_password(req.password),
+        full_name=req.full_name.strip(),
+        role="SUPER_ADMINISTRATOR",
+        mfa_enabled=False,
     )
     db.add(user)
     db.flush()
+
     db.add(AuditLog(
-        tenant_id=tenant.id, user_id=user.id, action="INITIAL_SUPER_ADMIN_CREATED",
-        target_type="USER", target_id=user.id, details='{"method":"one_time_bootstrap"}',
+        tenant_id=tenant.id,
+        user_id=user.id,
+        action="INITIAL_SUPER_ADMIN_CREATED",
+        target_type="USER",
+        target_id=user.id,
+        details='{"method":"one_time_bootstrap"}',
     ))
+
     try:
         db.commit()
     except IntegrityError:
         db.rollback()
-        raise HTTPException(status_code=409, detail="The initial Super Admin has already been created")
+        raise HTTPException(
+            status_code=409,
+            detail="The initial Super Admin has already been created"
+        )
+
     db.refresh(user)
-    token_data = {"sub": user.id, "tenant_id": tenant.id, "role": user.role}
+    token_data = {
+        "sub": user.id,
+        "tenant_id": tenant.id,
+        "role": user.role
+    }
+
     return TokenResponse(
-        accessToken=create_access_token(token_data), refreshToken=create_refresh_token(token_data),
-        tokenType="Bearer", expiresIn=86400,
+        accessToken=create_access_token(token_data),
+        refreshToken=create_refresh_token(token_data),
+        tokenType="Bearer",
+        expiresIn=86400,
         user=UserResponse(
-            id=user.id, email=user.email, fullName=user.full_name, role=user.role,
-            tenantId=user.tenant_id, mfaEnabled=user.mfa_enabled,
+            id=user.id,
+            email=user.email,
+            fullName=user.full_name,
+            role=user.role,
+            tenantId=user.tenant_id,
+            mfaEnabled=user.mfa_enabled,
             createdAt=user.created_at.strftime("%Y-%m-%d %H:%M:%S"),
         ),
     )
@@ -80,11 +114,17 @@ def create_restricted_admin(
 ):
     """Allow the Super Admin to create one restricted operational administrator."""
     if db.query(User).filter(User.role == "ADMINISTRATOR").first():
-        raise HTTPException(status_code=409, detail="The restricted administrator account already exists")
+        raise HTTPException(
+            status_code=409,
+            detail="The restricted administrator account already exists"
+        )
 
     email = req.email.lower().strip()
     if db.query(User).filter(User.email == email).first():
-        raise HTTPException(status_code=409, detail="An account with this email already exists")
+        raise HTTPException(
+            status_code=409,
+            detail="An account with this email already exists"
+        )
 
     admin = User(
         tenant_id=current_user.tenant_id,
@@ -96,6 +136,7 @@ def create_restricted_admin(
     )
     db.add(admin)
     db.flush()
+
     db.add(AuditLog(
         tenant_id=current_user.tenant_id,
         user_id=current_user.id,
@@ -104,30 +145,41 @@ def create_restricted_admin(
         target_id=admin.id,
         details='{"role":"ADMINISTRATOR"}',
     ))
+
     try:
         db.commit()
     except IntegrityError:
         db.rollback()
-        raise HTTPException(status_code=409, detail="Could not create the restricted administrator")
+        raise HTTPException(
+            status_code=409,
+            detail="Could not create the restricted administrator"
+        )
+
     db.refresh(admin)
     return UserResponse(
-        id=admin.id, email=admin.email, fullName=admin.full_name, role=admin.role,
-        tenantId=admin.tenant_id, mfaEnabled=admin.mfa_enabled,
+        id=admin.id,
+        email=admin.email,
+        fullName=admin.full_name,
+        role=admin.role,
+        tenantId=admin.tenant_id,
+        mfaEnabled=admin.mfa_enabled,
         createdAt=admin.created_at.strftime("%Y-%m-%d %H:%M:%S"),
     )
 
 
 @router.post("/auth/register", response_model=TokenResponse)
 def register(req: UserRegisterRequest, db: Session = Depends(get_db)):
-    # Check if user already exists
-    existing = db.query(User).filter(User.email == req.email.lower().strip()).first()
+    """Register a new customer and provision their organization."""
+    existing = db.query(User).filter(
+        User.email == req.email.lower().strip()
+    ).first()
+
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="An account with this email address already exists."
         )
 
-    # Auto-provision dedicated tenant for new organization/customer
     tenant_id = str(uuid.uuid4())
     tenant = Tenant(
         id=tenant_id,
@@ -147,10 +199,11 @@ def register(req: UserRegisterRequest, db: Session = Depends(get_db)):
         role="CUSTOMER",
         mfa_enabled=False
     )
-        db.add(user)
-    db.flush([user])
 
-    # Audit log
+    # Save the user before creating the audit record referencing that user.
+    db.add(user)
+    db.flush()
+
     audit = AuditLog(
         tenant_id=tenant_id,
         user_id=user_id,
@@ -160,11 +213,23 @@ def register(req: UserRegisterRequest, db: Session = Depends(get_db)):
         details=f'{{"email": "{req.email}"}}'
     )
     db.add(audit)
-    db.commit()
+
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="Could not complete registration. Please try again."
+        )
+
     db.refresh(user)
 
-    # Generate JWT pair
-    token_data = {"sub": user.id, "tenant_id": tenant_id, "role": user.role}
+    token_data = {
+        "sub": user.id,
+        "tenant_id": tenant_id,
+        "role": user.role
+    }
     access_token = create_access_token(token_data)
     refresh_token = create_refresh_token(token_data)
 
@@ -186,9 +251,13 @@ def register(req: UserRegisterRequest, db: Session = Depends(get_db)):
         user=user_resp
     )
 
+
 @router.post("/auth/login", response_model=TokenResponse)
 def login(req: UserLoginRequest, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.email == req.email.lower().strip()).first()
+    user = db.query(User).filter(
+        User.email == req.email.lower().strip()
+    ).first()
+
     if not user or not verify_password(req.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -203,13 +272,16 @@ def login(req: UserLoginRequest, db: Session = Depends(get_db)):
         )
 
     if password_needs_rehash(user.password_hash):
-        user.password_hash = hash_password(req.password)  # upgrade legacy fixed-salt hash
+        user.password_hash = hash_password(req.password)
 
-    token_data = {"sub": user.id, "tenant_id": user.tenant_id, "role": user.role}
+    token_data = {
+        "sub": user.id,
+        "tenant_id": user.tenant_id,
+        "role": user.role
+    }
     access_token = create_access_token(token_data)
     refresh_token = create_refresh_token(token_data)
 
-    # Record audit log
     audit = AuditLog(
         tenant_id=user.tenant_id,
         user_id=user.id,
@@ -239,6 +311,7 @@ def login(req: UserLoginRequest, db: Session = Depends(get_db)):
         user=user_resp
     )
 
+
 @router.post("/auth/refresh", response_model=TokenResponse)
 def refresh_token(req: TokenRefreshRequest, db: Session = Depends(get_db)):
     try:
@@ -256,8 +329,10 @@ def refresh_token(req: TokenRefreshRequest, db: Session = Depends(get_db)):
             detail="Provided token is not a refresh token"
         )
 
-    # Check revocation
-    revoked = db.query(RevokedToken).filter(RevokedToken.token == req.refresh_token).first()
+    revoked = db.query(RevokedToken).filter(
+        RevokedToken.token == req.refresh_token
+    ).first()
+
     if revoked:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -266,18 +341,35 @@ def refresh_token(req: TokenRefreshRequest, db: Session = Depends(get_db)):
         )
 
     user_id = payload.get("sub")
-    user = db.query(User).filter(User.id == user_id, User.is_active == True).first()
+    user = db.query(User).filter(
+        User.id == user_id,
+        User.is_active == True
+    ).first()
+
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User no longer active"
         )
 
-    # Revoke old refresh token (refresh token rotation)
-    exp = datetime.fromtimestamp(payload.get("exp", int((datetime.utcnow() + timedelta(days=30)).timestamp())))
-    db.add(RevokedToken(token=req.refresh_token, token_type="refresh", expires_at=exp))
+    exp = datetime.fromtimestamp(
+        payload.get(
+            "exp",
+            int((datetime.utcnow() + timedelta(days=30)).timestamp())
+        )
+    )
 
-    token_data = {"sub": user.id, "tenant_id": user.tenant_id, "role": user.role}
+    db.add(RevokedToken(
+        token=req.refresh_token,
+        token_type="refresh",
+        expires_at=exp
+    ))
+
+    token_data = {
+        "sub": user.id,
+        "tenant_id": user.tenant_id,
+        "role": user.role
+    }
     new_access = create_access_token(token_data)
     new_refresh = create_refresh_token(token_data)
     db.commit()
@@ -300,6 +392,7 @@ def refresh_token(req: TokenRefreshRequest, db: Session = Depends(get_db)):
         user=user_resp
     )
 
+
 @router.post("/auth/logout")
 def logout(
     token: str = Depends(get_token_from_header),
@@ -308,13 +401,27 @@ def logout(
 ):
     try:
         payload = decode_token(token)
-        exp = datetime.fromtimestamp(payload.get("exp", int((datetime.utcnow() + timedelta(hours=24)).timestamp())))
+        exp = datetime.fromtimestamp(
+            payload.get(
+                "exp",
+                int((datetime.utcnow() + timedelta(hours=24)).timestamp())
+            )
+        )
     except Exception:
         exp = datetime.utcnow() + timedelta(hours=24)
 
-    db.add(RevokedToken(token=token, token_type="access", expires_at=exp))
+    db.add(RevokedToken(
+        token=token,
+        token_type="access",
+        expires_at=exp
+    ))
     db.commit()
-    return {"status": "SUCCESS", "message": "Logged out successfully"}
+
+    return {
+        "status": "SUCCESS",
+        "message": "Logged out successfully"
+    }
+
 
 @router.get("/users/me", response_model=UserResponse)
 def get_current_user_profile(current_user: User = Depends(get_current_user)):
@@ -327,6 +434,7 @@ def get_current_user_profile(current_user: User = Depends(get_current_user)):
         mfaEnabled=current_user.mfa_enabled,
         createdAt=current_user.created_at.strftime("%Y-%m-%d %H:%M:%S")
     )
+
 
 @router.get("/tenants/current", response_model=TenantResponse)
 def get_tenant_details(
