@@ -96,7 +96,12 @@ fun MainAppContent(viewModel: XauPilotViewModel) {
             NavigationBar(
                 containerColor = CharcoalSurface,
                 tonalElevation = 8.dp,
-                modifier = Modifier.height(72.dp)
+                // Keep the navigation bar anchored at the bottom and let Material 3
+                // apply the system navigation-bar inset (gesture/3-button area).
+                // Do not force a fixed height: it can clip labels and icons when
+                // edge-to-edge is enabled.
+                windowInsets = NavigationBarDefaults.windowInsets,
+                modifier = Modifier.fillMaxWidth()
             ) {
                 navTabs.forEach { tab ->
                     val isSelected = when (currentScreen) {
@@ -122,7 +127,7 @@ fun MainAppContent(viewModel: XauPilotViewModel) {
                         label = {
                             Text(
                                 text = tab.title,
-                                fontSize = 11.sp
+                                fontSize = 12.sp
                             )
                         },
                         colors = NavigationBarItemDefaults.colors(
