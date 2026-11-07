@@ -19,10 +19,6 @@ fun AdminConsoleScreen(user: User?) {
     var pending by remember { mutableStateOf<List<Map<String, Any?>>>(emptyList()) }
     var admins by remember { mutableStateOf<List<Map<String, Any?>>>(emptyList()) }
     var users by remember { mutableStateOf<List<Map<String, Any?>>>(emptyList()) }
-    var conversations by remember { mutableStateOf<List<Map<String, Any?>>>(emptyList()) }
-    var selectedConversation by remember { mutableStateOf<String?>(null) }
-    var messages by remember { mutableStateOf<List<Map<String, Any?>>>(emptyList()) }
-    var reply by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var fullName by remember { mutableStateOf("") }
@@ -35,20 +31,12 @@ fun AdminConsoleScreen(user: User?) {
         try {
             val q = ApiClient.apiService.getPendingEaReviews()
             if (q.isSuccessful) pending = q.body().orEmpty() else message = "EA queue unavailable (${q.code()})."
-            val c = ApiClient.apiService.getSupportConversations()
-            if (c.isSuccessful) conversations = c.body().orEmpty() else message = "Support inbox unavailable (${c.code()})."
             if (isSuperAdmin) {
                 val a = ApiClient.apiService.getAdministrators(); if (a.isSuccessful) admins = a.body().orEmpty()
                 val u = ApiClient.apiService.getPlatformUsers(); if (u.isSuccessful) users = u.body().orEmpty()
             }
         } catch (e: Exception) { message = e.message ?: "Network error." }
         loading = false
-    } }
-    fun loadConversation(id: String) { scope.launch {
-        try { val r = ApiClient.apiService.getSupportConversation(id)
-            if (r.isSuccessful) messages = (r.body()?.get("messages") as? List<Map<String, Any?>>).orEmpty()
-            else message = "Could not open conversation (${r.code()})."
-        } catch (e: Exception) { message = e.message }
     } }
     LaunchedEffect(role) { if (canAdmin) loadAll() }
 
