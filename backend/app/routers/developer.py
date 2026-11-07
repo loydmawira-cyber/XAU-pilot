@@ -20,7 +20,7 @@ from backend.app.dependencies import get_current_user
 from backend.app.ea_dev import manifest as mf
 from backend.app.ea_dev import storage
 from backend.app.models import (
-    DeveloperProfile, EaBinaryPackage, EaConfigVersion, EaDeveloperAuditLog,
+    DeveloperProfile, EaBinaryPackage, EaExtractionJob, EaConfigVersion, EaDeveloperAuditLog,
     EaInputManifest, EaInstallation, EaProduct, EaProductVersion, User,
 )
 
@@ -295,8 +295,17 @@ def upload_binary(product_id: str, version_id: str, file: UploadFile = File(...)
         version_id=version.id, storage_key=stored.storage_key,
         original_filename=(file.filename or "")[:200], sha256=stored.sha256,
         size_bytes=stored.size_bytes, scan_status=scan_status, uploaded_by=user.id))
+    # Queue MT5 inspection automatically; the separate Windows worker claims this job.
+    # Re-uploading replaces the prior draft binary and its prior extraction result.
+    existing_job = db.query(EaExtractionJob).filter(EaExtractionJob.version_id == version.id).first()
+    if existing_job:
+        db.delete(existing_job)
+        db.flush()
+    db.add(EaExtractionJob(
+        product_id=product.id, version_id=version.id, binary_sha256=stored.sha256, status="QUEUED"))
     _audit(db, user, product.id, version.id, "BINARY_UPLOADED",
-           {"sha256": stored.sha256, "size": stored.size_bytes, "scan": scan_status})
+           {"sha256": stored.sha256, "size": stored.size_bytes, "scan": scan_status,
+            "extraction": "QUEUED"})
     db.commit()
     return _version_dict(db, version)
 
