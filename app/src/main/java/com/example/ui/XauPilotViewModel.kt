@@ -35,10 +35,6 @@ class XauPilotViewModel(
     private val repository: XauPilotRepository = XauPilotRepository.getInstance()
 ) : ViewModel() {
 
-    init {
-        restoreAuthenticatedSession()
-    }
-
     private val _sessionRestoreComplete = MutableStateFlow(false)
     val sessionRestoreComplete: StateFlow<Boolean> = _sessionRestoreComplete.asStateFlow()
     private val _isGuestMode = MutableStateFlow(false)
@@ -276,6 +272,13 @@ class XauPilotViewModel(
         }
     }
     val backendSyncStatus = repository.backendSyncStatus
+
+    // Start session restoration only after every StateFlow used by the restore
+    // coroutine has been initialized. Launching from the earlier init block
+    // could run immediately on the main thread and access an uninitialized flow.
+    init {
+        restoreAuthenticatedSession()
+    }
 
     fun refreshBackend() {
         repository.syncFromBackend()
