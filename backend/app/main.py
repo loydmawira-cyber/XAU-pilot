@@ -19,8 +19,22 @@ from backend.app.routers import (
 # Initialize database schema tables if not present
 try:
     Base.metadata.create_all(bind=engine)
+    # Existing deployments may have ea_products from the initial schema but not
+    # the developer-release columns added by migration 002. create_all does not
+    # alter existing tables, so ensure these additive columns exist on PostgreSQL.
+    if settings.DATABASE_URL.startswith(("postgresql://", "postgresql+")):
+        from sqlalchemy import text
+        with engine.begin() as connection:
+            connection.execute(text(
+                "ALTER TABLE ea_products "
+                "ADD COLUMN IF NOT EXISTS developer_id UUID REFERENCES users(id)"
+            ))
+            connection.execute(text(
+                "ALTER TABLE ea_products "
+                "ADD COLUMN IF NOT EXISTS listing_status VARCHAR(30) NOT NULL DEFAULT 'APPROVED'"
+            ))
 except Exception as e:
-    print(f"[XAU-PILOT] Note: DB create_all deferred to migrations: {e}")
+    print(f"[XAU-PILOT] Note: DB schema initialization deferred to migrations: {e}")
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
