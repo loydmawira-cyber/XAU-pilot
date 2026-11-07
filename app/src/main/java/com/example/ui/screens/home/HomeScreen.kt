@@ -305,7 +305,7 @@ fun HomeScreen(
         item {
             SectionHeader(
                 title = "REMOTE CONTROL",
-                subtitle = "Manage account-wide EA executions"
+                subtitle = "Control EA entries and emergency position closure"
             )
             Card(
                 shape = RoundedCornerShape(14.dp),
@@ -324,13 +324,15 @@ fun HomeScreen(
                         border = BorderStroke(1.dp, TradingAmber.copy(alpha = 0.5f)),
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = TradingAmber),
                         shape = RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp),
                         modifier = Modifier
                             .weight(1f)
+                            .heightIn(min = 44.dp)
                             .testTag("quick_pause_button")
                     ) {
                         Icon(Icons.Default.Pause, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Pause EAs", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text("PAUSE NEW TRADES", fontSize = 9.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                     }
 
                     OutlinedButton(
@@ -338,26 +340,30 @@ fun HomeScreen(
                         border = BorderStroke(1.dp, TradingGreen.copy(alpha = 0.5f)),
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = TradingGreen),
                         shape = RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp),
                         modifier = Modifier
                             .weight(1f)
+                            .heightIn(min = 44.dp)
                             .testTag("quick_resume_button")
                     ) {
                         Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Resume", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text("RESUME EAs", fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                     }
 
                     Button(
                         onClick = { viewModel.openEmergencyDialog() },
                         colors = ButtonDefaults.buttonColors(containerColor = TradingRed),
                         shape = RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp),
                         modifier = Modifier
-                            .weight(1.2f)
+                            .weight(1f)
+                            .heightIn(min = 44.dp)
                             .testTag("quick_emergency_stop_button")
                     ) {
                         Icon(Icons.Default.Warning, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("EMERGENCY", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text("STOP & CLOSE ALL", fontSize = 8.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
                     }
                 }
             }
