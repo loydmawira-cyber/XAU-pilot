@@ -146,7 +146,7 @@ def complete_job(req: CompleteRequest, authorization: str | None = Header(defaul
     return {"job_id": job.id, "status": job.status, "review_required": True}
 
 
-@router.get("/developer/ea-products/{product_id}/versions/{version_id}/extraction")
+@router.get("/api/v1/developer/ea-products/{product_id}/versions/{version_id}/extraction")
 def developer_extraction_status(product_id: str, version_id: str,
                                 user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     product = db.query(EaProduct).filter(EaProduct.id == product_id, EaProduct.developer_id == user.id).first()
