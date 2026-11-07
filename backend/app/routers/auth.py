@@ -147,7 +147,8 @@ def register(req: UserRegisterRequest, db: Session = Depends(get_db)):
         role="CUSTOMER",
         mfa_enabled=False
     )
-    db.add(user)
+        db.add(user)
+    db.flush([user])
 
     # Audit log
     audit = AuditLog(
