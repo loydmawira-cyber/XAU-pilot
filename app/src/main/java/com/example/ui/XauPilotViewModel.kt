@@ -163,42 +163,46 @@ class XauPilotViewModel(
         }
     }
 
-    fun uploadAndPublishDraft(
-        context: Context, fileUri: Uri, name: String, version: String, description: String,
-        category: String, monthlyPrice: Double, manifestParametersJson: String
-    ) {
+    fun uploadAndPublishDraft(context: Context, fileUri: Uri) {
         viewModelScope.launch {
             _publisherBusy.value = true
             _publisherResult.value = null
             try {
                 val user = authSession.value?.user ?: error("Please sign in before uploading an EA")
-                require(manifestParametersJson.trim().startsWith("[") && manifestParametersJson.trim().endsWith("]")) {
-                    "EA input manifest must be a valid JSON array. Use [] when there are no customer inputs."
-                }
-                org.json.JSONArray(manifestParametersJson)
-                val api = ApiClient.apiService
-                val developer = api.registerDeveloper(mapOf("display_name" to user.fullName, "contact_email" to user.email))
-                if (!developer.isSuccessful && developer.code() != 409) {
-                    error("Developer registration failed: ${developer.code()} ${developer.errorBody()?.string().orEmpty()}")
-                }
-                val code = (name.lowercase(Locale.US).replace(Regex("[^a-z0-9]+"), "-").trim('-')
-                    .ifBlank { "ea-package" }.take(28) + "-" + java.util.UUID.randomUUID().toString().take(8))
-                val productResponse = api.createDeveloperEaProduct(mapOf(
-                    "product_code" to code, "name" to name, "description" to description,
-                    "strategy_category" to category, "risk_disclosures" to "Automated trading involves substantial risk. Test on a demo account before live use.",
-                    "monthly_price_usd" to monthlyPrice, "annual_price_usd" to (monthlyPrice * 10),
-                    "lifetime_price_usd" to (monthlyPrice * 24), "min_deposit_usd" to 0
-                ))
-                if (!productResponse.isSuccessful) error("Product creation failed: ${productResponse.code()} ${productResponse.errorBody()?.string().orEmpty()}")
-                val productId = productResponse.body()?.get("id")?.toString() ?: error("Backend did not return product ID")
-                _publisherProductId.value = productId
-                val versionResponse = api.createDeveloperEaVersion(productId, mapOf("version" to version, "release_notes" to "Initial release"))
-                if (!versionResponse.isSuccessful) error("Version creation failed: ${versionResponse.code()} ${versionResponse.errorBody()?.string().orEmpty()}")
-                val versionId = versionResponse.body()?.get("id")?.toString() ?: error("Backend did not return version ID")
-                val fileName = context.contentResolver.query(fileUri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
-                    if (c.moveToFirst()) c.getString(0) else null
-                } ?: "ea.ex5"
+                val fileName = context.contentResolver.query(
+                    fileUri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null
+                )?.use { c -> if (c.moveToFirst()) c.getString(0) else null } ?: "ea.ex5"
                 require(fileName.lowercase(Locale.US).endsWith(".ex5")) { "Please select a compiled .ex5 EA file" }
+                val eaName = fileName.substringBeforeLast('.').replace(Regex("[_-]+"), " ").trim()
+                    .ifBlank { "New EA" }.take(120)
+                val api = ApiClient.apiService
+                val developer = api.registerDeveloper(mapOf(
+                    "display_name" to user.fullName, "contact_email" to user.email
+                ))
+                if (!developer.isSuccessful && developer.code() != 409) {
+                    error("Developer setup failed: ${developer.code()} ${developer.errorBody()?.string().orEmpty()}")
+                }
+                val code = eaName.lowercase(Locale.US).replace(Regex("[^a-z0-9]+"), "-").trim('-')
+                    .ifBlank { "ea-package" }.take(28) + "-" + java.util.UUID.randomUUID().toString().take(8)
+                val productResponse = api.createDeveloperEaProduct(mapOf(
+                    "product_code" to code,
+                    "name" to eaName,
+                    "description" to "EA package uploaded by its developer. Marketplace details can be completed after automatic input discovery.",
+                    "strategy_category" to "GOLD_TREND",
+                    "risk_disclosures" to "Automated trading involves substantial risk. Test on a demo account before live use.",
+                    "monthly_price_usd" to 0.0,
+                    "annual_price_usd" to 0.0,
+                    "lifetime_price_usd" to 0.0,
+                    "min_deposit_usd" to 0.0
+                ))
+                if (!productResponse.isSuccessful) error("EA draft creation failed: ${productResponse.code()} ${productResponse.errorBody()?.string().orEmpty()}")
+                val productId = productResponse.body()?.get("id")?.toString() ?: error("Backend did not return EA ID")
+                _publisherProductId.value = productId
+                val versionResponse = api.createDeveloperEaVersion(productId, mapOf(
+                    "version" to "1.0.0", "release_notes" to "Initial upload"
+                ))
+                if (!versionResponse.isSuccessful) error("EA version setup failed: ${versionResponse.code()} ${versionResponse.errorBody()?.string().orEmpty()}")
+                val versionId = versionResponse.body()?.get("id")?.toString() ?: error("Backend did not return version ID")
                 val bytes = withContext(Dispatchers.IO) {
                     context.contentResolver.openInputStream(fileUri)?.use { input ->
                         val output = ByteArrayOutputStream()
@@ -215,23 +219,13 @@ class XauPilotViewModel(
                     }
                 } ?: error("Could not read the selected EA file")
                 require(bytes.isNotEmpty()) { "EA file is empty" }
-                val binaryPart = MultipartBody.Part.createFormData("file", fileName, bytes.toRequestBody("application/octet-stream".toMediaType()))
-                val binaryResponse = api.uploadDeveloperEaBinary(productId, versionId, binaryPart)
-                if (!binaryResponse.isSuccessful) error("EA upload failed: ${binaryResponse.code()} ${binaryResponse.errorBody()?.string().orEmpty()}")
-                val manifest = """{"schema_version":"1.0","ea_product_id":"$productId","ea_version":"$version","developer_id":"${user.id}","parameters":$manifestParametersJson}"""
-                val manifestPart = MultipartBody.Part.createFormData("file", "manifest.json", manifest.toRequestBody("application/json".toMediaType()))
-                val manifestResponse = api.uploadDeveloperEaManifest(productId, versionId, manifestPart)
-                if (!manifestResponse.isSuccessful) error("Manifest upload failed: ${manifestResponse.code()} ${manifestResponse.errorBody()?.string().orEmpty()}")
-                val validation = api.validateDeveloperEaVersion(productId, versionId)
-                if (!validation.isSuccessful) error("Validation request failed: ${validation.code()} ${validation.errorBody()?.string().orEmpty()}")
-                val body = validation.body().orEmpty()
-                if (body["valid"] != true) error("EA package uploaded, but manifest validation failed: ${body["errors"]}")
-                val scanStatus = ((binaryResponse.body()?.get("binary") as? Map<*, *>)?.get("scan_status") as? String) ?: "UNKNOWN"
-                _publisherResult.value = if (scanStatus == "CLEAN") {
-                    "EA and manifest uploaded. Malware scan is CLEAN; administrator review is still required. The EA is not yet published. Product ID: $productId"
-                } else {
-                    "EA and manifest uploaded and validated. Scan status: $scanStatus. Publication is blocked until a real scanner reports CLEAN and the required review is completed. Product ID: $productId"
-                }
+                val part = MultipartBody.Part.createFormData(
+                    "file", fileName, bytes.toRequestBody("application/octet-stream".toMediaType())
+                )
+                val upload = api.uploadDeveloperEaBinary(productId, versionId, part)
+                if (!upload.isSuccessful) error("EA upload failed: ${upload.code()} ${upload.errorBody()?.string().orEmpty()}")
+                val scan = ((upload.body()?.get("binary") as? Map<*, *>)?.get("scan_status") as? String) ?: "UNKNOWN"
+                _publisherResult.value = "EX5 uploaded and saved as a draft. File scan: $scan. Automatic MT5 input extraction is not connected yet, so this EA cannot be published until extraction and review are completed. Product ID: $productId"
             } catch (e: Exception) {
                 _publisherResult.value = e.message ?: "EA upload failed"
             } finally {
