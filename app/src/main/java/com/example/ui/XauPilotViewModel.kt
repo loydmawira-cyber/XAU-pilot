@@ -37,12 +37,13 @@ class XauPilotViewModel(
     private val repository: XauPilotRepository = XauPilotRepository.getInstance()
 ) : ViewModel() {
 
+    private val _sessionRestoreComplete = MutableStateFlow(false)
+    val sessionRestoreComplete: StateFlow<Boolean> = _sessionRestoreComplete.asStateFlow()
+
+    // Start session restoration only after the StateFlow it updates is initialized.
     init {
         restoreAuthenticatedSession()
     }
-
-    private val _sessionRestoreComplete = MutableStateFlow(false)
-    val sessionRestoreComplete: StateFlow<Boolean> = _sessionRestoreComplete.asStateFlow()
     private val _isGuestMode = MutableStateFlow(false)
     val isGuestMode: StateFlow<Boolean> = _isGuestMode.asStateFlow()
 
