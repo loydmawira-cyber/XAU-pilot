@@ -444,3 +444,25 @@ class EaPackageDownloadLog(Base):
     allowed = Column(Boolean, nullable=False)
     reason = Column(String(120), nullable=True)
     created_at = Column(DateTime, nullable=False, default=utc_now)
+
+
+class SupportConversation(Base):
+    __tablename__ = "support_conversations"
+
+    id = Column(String(36), primary_key=True, default=gen_uuid)
+    owner_user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    subject = Column(String(180), nullable=False)
+    status = Column(String(20), nullable=False, default="OPEN", index=True)  # OPEN, CLOSED
+    assigned_admin_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    created_at = Column(DateTime, nullable=False, default=utc_now)
+    updated_at = Column(DateTime, nullable=False, default=utc_now, onupdate=utc_now)
+
+
+class SupportMessage(Base):
+    __tablename__ = "support_messages"
+
+    id = Column(String(36), primary_key=True, default=gen_uuid)
+    conversation_id = Column(String(36), ForeignKey("support_conversations.id", ondelete="CASCADE"), nullable=False, index=True)
+    sender_user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    body = Column(Text, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=utc_now)
